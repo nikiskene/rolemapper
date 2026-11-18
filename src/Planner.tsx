@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react'
 
-import { annualWage, hiringBudget, matchWageCity, wageCities, wageSource } from './talentBenchmarks'
+import { amountText, isProductRole, marketCurrencies, monthlyWage, wageOptions } from './internationalWages'
+import { HireWageFields, LocationInput, MarketChoices, WageDetails, useWageData, type HireInput, type PlannedHire } from './PlannerWages'
 import { patterns, suggestedPattern, type Pattern } from './plannerProfiles'
 
 const currencies = ['USD','EUR','AED','GBP','CHF','CAD','AUD','INR','SGD','MXN','PLN','CZK','JPY','NZD','BRL','ZAR'] as const
@@ -29,8 +30,11 @@ export function Planner() {
   const [currency,setCurrency] = useState('USD')
   const [market,setMarket] = useState('')
   const [city,setCity] = useState('')
-  const [overrides,setOverrides] = useState<Record<string,string>>({})
-  const [useBenchmarks,setUseBenchmarks] = useState(false)
+  const [hireInputs,setHireInputs] = useState<Record<string,HireInput>>({})
+  const [hours,setHours] = useState('40')
+  const [weeks,setWeeks] = useState('52')
+  const {data:wageData,loaded:wagesLoaded,failed:wageFailures} = useWageData(step>=2)
+  const [useBenchmarks,setUseBenchmarks] = useState(true)
   const [burden,setBurden] = useState('')
   const [cost,setCost] = useState('')
   const [setup,setSetup] = useState('')
@@ -42,32 +46,53 @@ export function Planner() {
   const suggestedHires = Math.min(gaps.length, 2)
   const hires = Number.isNaN(target) ? Math.min(suggestedHires,500-current) : target-current
   const phaseCount = Math.min(3, months, Math.max(hires, 1))
-  const money = new Intl.NumberFormat('en',{style:'currency',currency,minimumFractionDigits:0,maximumFractionDigits:2})
-  const setupMinor = Math.round(Number(setup)*100)
   const marketLabel = [city.trim(),market==='us'?'United States':market==='remote'?'Remote':market==='other'?null:market].filter(Boolean).join(', ')
-  const wageCity = market==='us' && currency==='USD' && goal!=='other' ? matchWageCity(city) : undefined
-  const hiresByRole = gaps.slice(0,Math.max(0,hires)).map(([role])=>{
-    const wage=wageCity?annualWage(role,wageCity):undefined
-    const own=overrides[role]
-    const monthly=own!==undefined&&own!==''?Math.round(Number(own)*100):
-      wage&&useBenchmarks?Math.round(wage.mean/12*(1+Number(burden)/100)*100):
-      cost!==''?Math.round(Number(cost)*100):null
-    return {role,wage,monthly,estimated:!!wage&&useBenchmarks&&!own}
+  const namedHires = gaps.slice(0,Math.max(0,hires))
+  const hiresByRole:PlannedHire[] = Array.from({length:Math.max(0,hires)},(_,index)=>{
+    const named = namedHires[index]?.[0]
+    const role = named ?? 'Additional hire '+(index-namedHires.length+1)
+    const id = named ? 'role:'+named : 'hire:'+index
+    const input = hireInputs[id] ?? {}
+    const hireMarket = input.market || market
+    const hireCity = input.market ? input.city??'' : city
+    const hireCurrency = marketCurrencies[hireMarket] ?? currency
+    const options = named ? wageOptions(role,hireMarket,hireCity,wageData) : []
+    const wage = isProductRole(role) ? options.find(option=>option.title===input.proxy) : options[0]
+    const allocation = Number(input.allocation??100)/100
+    const wageMonthly = wage ? monthlyWage(wage,Number(hours),Number(weeks))*allocation : null
+    const manual = input.manual?.[hireCurrency] ?? ''
+    const manualWage = manual!=='' ? Number(manual)*allocation : null
+    const published = useBenchmarks ? wageMonthly : null
+    const fallback = cost!==''&&hireCurrency===currency ? Number(cost)*allocation : null
+    const assumption = manualWage ?? published ?? fallback
+    const assumptionSource = manualWage!==null ? 'Manual override' : published!==null ? 'Published wage' : fallback!==null ? 'Shared fallback' : ''
+    const employerRate = input.burden || burden
+    const employer = assumption===null||employerRate==='' ? null : assumption*(1+Number(employerRate)/100)
+    return {id,role,named:!!named,market:hireMarket,city:hireCity,currency:hireCurrency,input,options,wage,assumption,assumptionSource,employer}
   })
-  const hiresBenchmarked = hiresByRole.some(role=>role.estimated)
-  const fallback = cost===''?null:Math.round(Number(cost)*100)
+  const missing = hiresByRole.filter(hire=>hire.assumption===null).length
+  const employerMissing = hiresByRole.filter(hire=>hire.assumption!==null&&hire.employer===null).length
+  const total = new Map<string,number>()
+  const activeMonthly = new Map<string,number>()
   let assigned = 0
-  const {plan,total,activeMonthly,missing} = hiringBudget(Array.from({length:phaseCount},(_,index)=>{
+  const plan = Array.from({length:phaseCount},(_,index)=>{
     const added = Math.floor(hires/phaseCount)+(index<hires%phaseCount?1:0)
     const firstMonth = Math.floor(index*months/phaseCount)+1
     const lastMonth = Math.floor((index+1)*months/phaseCount)
-    const phaseRoles = hiresByRole.slice(assigned,assigned+added)
+    const newHires = hiresByRole.slice(assigned,assigned+added)
     assigned += added
-    const generic = added-phaseRoles.length
-    return {added,firstMonth,lastMonth,roles:phaseRoles.map(row=>row.role),
-      known:phaseRoles.filter(row=>row.monthly!==null).length+(fallback===null?0:generic),
-      monthly:phaseRoles.reduce((sum,row)=>sum+(row.monthly??0),0)+(fallback??0)*generic}
-  }),setupMinor)
+    for(const hire of newHires){
+      const monthly = hire.employer ?? hire.assumption
+      if(monthly!==null) activeMonthly.set(hire.currency,(activeMonthly.get(hire.currency)??0)+Math.round(monthly*100))
+    }
+    const spend = new Map([...activeMonthly].map(([code,minor])=>[code,minor*(lastMonth-firstMonth+1)]))
+    if(setup!==''&&added) spend.set(currency,(spend.get(currency)??0)+Math.round(Number(setup)*100)*added)
+    for(const [code,minor] of spend) total.set(code,(total.get(code)??0)+minor)
+    return {added,firstMonth,lastMonth,roles:newHires.filter(hire=>hire.named).map(hire=>hire.role),spend,
+      partial:hiresByRole.slice(0,assigned).some(hire=>hire.employer===null)}
+  })
+  const moneyList = (values:Map<string,number>)=>[...values].sort(([a],[b])=>a.localeCompare(b)).map(([code,minor])=>amountText(code,minor/100)).join(' · ')
+  const changeHire = (id:string,values:Partial<HireInput>) => setHireInputs(current=>({...current,[id]:{...current[id],...values}}))
   async function readSite() {
     if (loading || !siteUrl.trim()) return
     setLoading(true)
@@ -161,52 +186,59 @@ export function Planner() {
         <label>How many months do you have?<input type="number" min="1" max="60" step="1" required value={Number.isNaN(months)?'':months} onChange={e=>setMonths(e.target.valueAsNumber)}/></label>
       </>}
       {step===2&&<>
-        <label>Where will you hire?<select value={market} onChange={e=>{
-          const next=e.target.value
+        <label>Where will you hire?<select value={market} onChange={event=>{
+          const next = event.target.value
           setMarket(next)
-          setUseBenchmarks(false)
-          const local:Record<string,string>={us:'USD',Austria:'EUR',Germany:'EUR','United Arab Emirates':'AED','United Kingdom':'GBP',Switzerland:'CHF',Canada:'CAD',Australia:'AUD',India:'INR',Singapore:'SGD'}
-          if(local[next]&&!cost&&!setup&&!Object.values(overrides).some(Boolean))setCurrency(local[next])
-        }}>
-          <option value="">Choose a hiring market (optional)</option>
-          <option value="us">United States</option>
-          {['Austria','Germany','United Arab Emirates','United Kingdom','Switzerland','Canada','Australia','India','Singapore'].map(value=><option key={value}>{value}</option>)}
-          <option value="remote">Remote across markets</option><option value="other">Other market</option>
+          setCity(next==='Singapore'?'Singapore':'')
+          if(marketCurrencies[next]&&!cost&&!setup) setCurrency(marketCurrencies[next])
+        }}><MarketChoices/></select></label>
+        <LocationInput id="wage-cities" market={market} city={city} change={setCity} data={wageData}/>
+        <label>Currency for shared budget inputs<select value={currency} onChange={event=>setCurrency(event.target.value)}>
+          {currencies.map(code=><option key={code}>{code}</option>)}
         </select></label>
-        <label>{market==='other'?'City and country (optional)':'City or region (optional)'}<input value={city} list={market==='us'?'wage-cities':undefined} onChange={e=>setCity(e.target.value)} maxLength={100} /></label>
-        {market==='us'&&<datalist id="wage-cities">{wageCities.map(value=><option key={value} value={value}/>)}</datalist>}
-        <label>Budget currency<select value={currency} onChange={e=>{setCurrency(e.target.value);setUseBenchmarks(false)}}>{currencies.map(c=><option key={c}>{c}</option>)}</select></label>
-        <p className="planner-note">Enter every estimate in {currency}. The configurator doesn’t convert currencies.</p>
+        {!wagesLoaded&&<p role="status">Loading international wage benchmarks…</p>}
+        {!!wageFailures.length&&<p role="status">Benchmarks could not load for {wageFailures.join(', ')}. You can enter wages manually.</p>}
         {hires>0&&<>
-          {wageCity&&hiresByRole.some(role=>role.wage)?<section className="site-sources" aria-label="Salary benchmarks">
-            <strong>{wageCity} metro wage benchmarks</strong>
-            <p><a href={wageSource} target="_blank" rel="noreferrer">U.S. Bureau of Labor Statistics · May 2025</a> · Annual employee wages for comparable occupations in the metropolitan area. Ranges show the middle 50% of wages where available. Add employer taxes and benefits separately.</p>
-            <div className="planner-coverage"><label><input type="checkbox" checked={useBenchmarks} onChange={e=>setUseBenchmarks(e.target.checked)}/><span>Use benchmarks for roles without my own estimate</span></label></div>
-            {useBenchmarks&&<label>Extra employer costs (% of benchmark wage)<input type="number" min="0" max="300" step="0.1" value={burden} onChange={e=>setBurden(e.target.value)} placeholder="0 (wages only)"/></label>}
-          </section>:market&&<p className="planner-note">{market==='us'&&!city.trim()?'Enter a city to look up local wages.':'Local wage benchmarks are unavailable for these roles, location or currency. Enter your estimates below.'}</p>}
-          {hiresByRole.map(({role,wage,monthly,estimated})=><div className="site-sources" key={role}>
-            <strong>{role}</strong>
-            {wage&&<p>{money.format(wage.mean)} average annual wage · {wage.title}
-              {wage.low!=null&&wage.high!=null&&<> · {money.format(wage.low)}–{money.format(wage.high)} middle 50%</>}
-              {estimated&&monthly!==null?' · '+money.format(monthly/100)+'/month in plan':''}</p>}
-            <label>Monthly cost override for {role}<input type="number" min="0" max="10000000" step="0.01" value={overrides[role]??''} onChange={e=>setOverrides(values=>({...values,[role]:e.target.value}))} placeholder="Optional · include employer costs"/></label>
-          </div>)}
+          <div className="planner-coverage"><label><input type="checkbox" checked={useBenchmarks} onChange={event=>setUseBenchmarks(event.target.checked)}/><span>Use published wages where available</span></label></div>
+          <label>Default extra employer costs (% of wage)<input type="number" min="0" max="300" step="0.1" value={burden}
+            onChange={event=>setBurden(event.target.value)} placeholder="Leave blank if unknown"/></label>
+          {hiresByRole.some(hire=>hire.wage?.period==='hour')&&<>
+            <label>Full-time hours per week<input type="number" required min="1" max="80" step="0.5" value={hours} onChange={event=>setHours(event.target.value)}/></label>
+            <label>Paid weeks per year<input type="number" required min="1" max="52" value={weeks} onChange={event=>setWeeks(event.target.value)}/></label>
+          </>}
+          {hiresByRole.filter(hire=>hire.named).map(hire=><HireWageFields key={hire.id} hire={hire} data={wageData} hours={Number(hours)} weeks={Number(weeks)}
+            manual={hire.input.manual?.[hire.currency]??''} change={values=>changeHire(hire.id,values)}/>)}
+          {hires>namedHires.length&&<details><summary>Set locations and wages for additional hires</summary>
+            {hiresByRole.filter(hire=>!hire.named).map(hire=><HireWageFields key={hire.id} hire={hire} data={wageData} hours={Number(hours)} weeks={Number(weeks)}
+              manual={hire.input.manual?.[hire.currency]??''} change={values=>changeHire(hire.id,values)}/>)}
+          </details>}
         </>}
-        <label>Fallback monthly cost per hire (optional)<input type="number" min="0" max="10000000" step="0.01" value={cost} onChange={e=>setCost(e.target.value)} placeholder="For hires without a role estimate"/></label>
-        <label>One-time hiring and setup cost per hire (optional)<input type="number" min="0" max="10000000" step="0.01" value={setup} onChange={e=>setSetup(e.target.value)}/></label>
+        <label>Fallback full-time monthly wage ({currency})<input type="number" min="0" max="10000000" step="0.01" value={cost}
+          onChange={event=>setCost(event.target.value)} placeholder="For hires in this currency without a wage estimate"/></label>
+        <label>One-time hiring and setup cost per hire ({currency})<input type="number" min="0" max="10000000" step="0.01"
+          value={setup} onChange={event=>setSetup(event.target.value)}/></label>
       </>}
       <div className="site-actions">{step>0&&<button type="button" className="site-button secondary" onClick={()=>move(step-1)}>Back</button>}
-        <button className="site-button" disabled={loading}>{step===2?'Show my plan':'Continue'}</button></div>
+        <button className="site-button" disabled={loading||(step===2&&!wagesLoaded)}>{step===2?'Show my plan':'Continue'}</button></div>
     </form>:<div className="planner-results">
       <p>{name&&<strong>{name} · </strong>}{objective}</p>
       {description&&<p>{description}</p>}
       <div className="budget-result"><p>Estimated hiring budget over {months} months</p>
-        <strong>{missing>0&&total===0?'Cost estimate needed':(missing?'Partial budget: ':'')+money.format(total/100)+' '+currency}</strong>
-        <p>{hires} new {hires===1?'hire':'hires'}{marketLabel&&' · '+marketLabel}{(activeMonthly>0||!missing)&&hires>0&&' · '+money.format(activeMonthly/100)+(missing?' known':' additional')+' monthly cost at target size'}</p>
-        {missing>0&&<p>{missing} {missing===1?'hire needs':'hires need'} a cost estimate.</p>}
-        {hiresBenchmarked&&<p>Includes wage estimates for the {wageCity} metro area{Number(burden)>0?' plus '+burden+'% for employer costs':' (employer taxes and benefits excluded for benchmarked roles)'}.</p>}
+        <strong>{total.size?(missing||employerMissing?'Partial budget · ':'')+moneyList(total):hires>0?'Cost estimate needed':amountText(currency,0)}</strong>
+        <p>{hires} new {hires===1?'hire':'hires'}{marketLabel&&' · Default market: '+marketLabel}</p>
+        {activeMonthly.size>0&&<p>{moneyList(activeMonthly)} per month at target size</p>}
+        {missing>0&&<p>{missing} {missing===1?'hire needs':'hires need'} a wage estimate.</p>}
+        {employerMissing>0&&<p>Employer costs are unknown for {employerMissing} {employerMissing===1?'hire':'hires'}. Their subtotals include wages only.</p>}
+        {total.size>1&&<p>Each currency is shown separately.</p>}
       </div>
-      {hiresByRole.length>0&&<details className="site-sources"><summary>Cost by role</summary><ul>{hiresByRole.map(({role,monthly,estimated})=><li key={role}>{role} · {monthly===null?'Estimate needed':money.format(monthly/100)+'/month'}{estimated?' (metro wage benchmark)':''}</li>)}</ul></details>}
+      {hiresByRole.length>0&&<details className="site-sources"><summary>Cost by role</summary>
+        <ul>{hiresByRole.map(hire=><li key={hire.id}>
+          <strong>{hire.role}</strong>{hire.city&&' · '+hire.city}
+          {hire.wage&&<WageDetails wage={hire.wage} role={hire.role} proxy={isProductRole(hire.role)} hours={Number(hours)} weeks={Number(weeks)}/>}
+          <p>Monthly wage used for planning · {hire.assumption===null?'Estimate needed':amountText(hire.currency,hire.assumption)+' · '+hire.assumptionSource}</p>
+          <p>Estimated monthly employer cost · {hire.employer===null?'Unknown':amountText(hire.currency,hire.employer)}</p>
+        </li>)}</ul>
+      </details>}
       <h3>Suggested starting responsibilities</h3>
       <p>One person can cover several responsibilities. Confirm who has capacity before hiring.</p>
       <ul>
@@ -219,7 +251,7 @@ export function Planner() {
         {pattern&&<p>{pattern.milestones[index]}</p>}
         {phase.roles.length>0&&<p>Roles to consider: {phase.roles.join(', ')}.</p>}
         {phase.added>phase.roles.length&&<p>Use the remaining headcount for capacity where the workload justifies it.</p>}</div>
-        {(!phase.partial||phase.spend>0)&&<strong>{phase.partial?'Partial: ':''}{money.format(phase.spend/100)}</strong>}
+        {phase.spend.size>0&&<strong>{phase.partial?'Partial · ':''}{moneyList(phase.spend)}</strong>}
       </li>)}</ol>:<p>{pattern?.milestones[0]||'Assign an owner and agree on a first milestone.'} This plan keeps the team at its current size.</p>}
       {missing>0&&<button type="button" className="site-button secondary" onClick={()=>move(2)}>Add cost estimate</button>}
       {hires>0&&<p className="planner-note">New hires start at the beginning of each phase. The estimate covers their monthly cost and the setup costs entered here. Plan separately for your existing team, overhead and contingency.</p>}

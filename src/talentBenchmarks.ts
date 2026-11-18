@@ -49,17 +49,5 @@ export function annualWage(role:string, city:string) {
   const [title, code] = occupations[occupation]
   const [mean, low, high] = metros[city]?.[code] ?? []
   if (mean == null) return
-  return {title, mean, low, high}
-}
-
-export function hiringBudget<T extends {added:number;firstMonth:number;lastMonth:number;known:number;monthly:number}>(phases:T[], setupMinor:number) {
-  let activeMonthly=0, missing=0, total=0
-  const plan=phases.map(phase=>{
-    activeMonthly+=phase.monthly
-    missing+=phase.added-phase.known
-    const spend=activeMonthly*(phase.lastMonth-phase.firstMonth+1)+phase.added*setupMinor
-    total+=spend
-    return {...phase,spend,partial:missing>0}
-  })
-  return {plan,total,activeMonthly,missing}
+  return {title, code, mean, low, high}
 }

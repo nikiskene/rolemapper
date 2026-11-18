@@ -1,5 +1,7 @@
-import { Planner } from './Planner'
+import { lazy, Suspense } from 'react'
 import './home.css'
+
+const Planner = lazy(()=>import('./Planner').then(module=>({default:module.Planner})))
 
 export function Brand() {
   return <a className="site-brand" href="/" aria-label="Rolemapper home">
@@ -72,7 +74,7 @@ export function PlannerPage() {
   return <div className="marketing"><SiteHeader/><main className="site-wrap site-section planner-page">
     <p className="site-kicker">Team planner</p><h1>Build a hiring plan</h1>
     <p>Get a suggested starting team, hiring phases and an estimated budget. Start with your public website or enter a short description.</p>
-    <Planner/>
+    <Suspense fallback={<p role="status">Loading the team planner…</p>}><Planner/></Suspense>
   </main><SiteFooter/></div>
 }
 
