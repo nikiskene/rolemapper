@@ -29,3 +29,9 @@ The map groups cards around a fixed center. Drag a card onto another card to ins
 Use separate Supabase projects and publishable keys for staging and production. Apply the migration to the selected project, configure email confirmation and SMTP as needed, and set each allowed app origin in Supabase Auth's URL configuration. Use explicit preview URLs for controlled previews. Link the repository to Netlify and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` for each environment. The Netlify config builds the app and serves SPA routes with framing disabled. The private map uses Supabase directly and needs no Netlify Functions or privileged browser credentials.
 
 The company record holds the one-owner relationship. The database creates its single map atomically, restricts every table to the authenticated owner, and uses composite references to keep people and organizations within the placement's company. Card and move RPCs run with the caller's privileges; the one privileged bootstrap RPC derives ownership exclusively from the authenticated user ID.
+
+## Public homepage and planner
+
+The homepage and legal pages are public. The planner estimates incremental hiring costs on-device and keeps answers in memory until the page is closed or reloaded. Login and account creation use the existing Supabase workspace.
+
+The displayed annual price is USD 10 per company. Stripe checkout remains pending. The supplied Stripe product is `prod_VeO0RjrNtj9we1` and price is `price_1Ud5EMEQ9WPDgXa9OGWEr4n4`. Verify the product and price in the intended Stripe environment before wiring checkout.

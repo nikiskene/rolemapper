@@ -3,18 +3,20 @@ import { createRoot } from 'react-dom/client'
 import { createClient, type Session } from '@supabase/supabase-js'
 import { errorText, linkedinUrl, zoneLabel, zones, type Card, type Company, type MapData, type Status, type Zone } from './model'
 import './style.css'
+import { Brand, Homepage, isLegalPath, LegalPage, PlannerPage } from './Home'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+const authCallback = /(?:^|[&#?])(?:access_token|code|error_code)=/.test(window.location.hash + window.location.search)
 const db = url && key ? createClient(url, key) : null
 const emptyMap:MapData = {cards:[],people:[],organizations:[]}
-const wordmark = <span className="brand"><span aria-hidden="true">✳</span> Rolemapper</span>
+const wordmark = <span className="auth-brand"><Brand/></span>
 
-function Auth() {
+function Auth({startRegister}:{startRegister:boolean}) {
   const [busy,setBusy] = useState(false)
   const [message,setMessage] = useState('')
   const [error,setError] = useState('')
-  const [register,setRegister] = useState(false)
+  const [register,setRegister] = useState(startRegister)
   async function submit(event:FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
@@ -35,6 +37,7 @@ function Auth() {
       <button className="primary" disabled={busy}>{busy?'Please wait…':register?'Create account':'Sign in'}</button>
       <button type="button" className="link" disabled={busy} onClick={()=>{setRegister(!register);setError('');setMessage('')}}>{register?'Already have an account? Sign in':'New here? Create an account'}</button>
     </form>
+    <p className="auth-legal"><a href="/privacy">Privacy notice</a> · <a href="/terms">Terms of use</a></p>
   </section></main>
 }
 
@@ -264,19 +267,32 @@ function MoveCard({card,map,close,move,busy,error}:{card:Card;map:MapData;close:
   </Panel>
 }
 
-function App() {
+function Account({startRegister}:{startRegister:boolean}) {
   const [session,setSession]=useState<Session|null|undefined>()
   const [error,setError]=useState('')
   useEffect(()=>{
     if(!db)return
     let live=true
-    const {data:{subscription}}=db.auth.onAuthStateChange((_event,next)=>{if(live)setSession(next)})
+    const {data:{subscription}}=db.auth.onAuthStateChange((_event,next)=>{if(live){
+      if(next && authCallback && window.location.pathname === '/') window.history.replaceState(null,'','/login')
+      setSession(next)
+    }})
     void db.auth.getSession().then(result=>{if(live&&result.error)setError(result.error.message)})
     return()=>{live=false;subscription.unsubscribe()}
   },[])
-  if(!db)return <main className="welcome"><section className="auth-card">{wordmark}<h1>Connect your workspace</h1><p>Set the Supabase URL and publishable key in <code>.env.local</code>, then restart Rolemapper.</p></section></main>
+  if(!db)return <main className="welcome"><section className="auth-card">{wordmark}<h1>Sign-in is unavailable</h1><p>Please try again later.</p></section></main>
   if(session===undefined)return <main className="welcome"><p role={error?'alert':'status'}>{error||'Checking session…'}</p></main>
-  return session?<Workspace session={session} key={session.user.id}/>:<Auth/>
+  return session?<Workspace session={session} key={session.user.id}/>:<Auth startRegister={startRegister}/>
+}
+
+function App() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+  if (path === '/login' || path === '/signup' || (path === '/' && authCallback)) {
+    return <Account startRegister={path === '/signup'}/>
+  }
+  if (path === '/planner') return <PlannerPage/>
+  if (isLegalPath(path)) return <LegalPage path={path}/>
+  return <Homepage/>
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App/></StrictMode>)
