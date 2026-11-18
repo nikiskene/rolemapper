@@ -54,3 +54,47 @@ test('Supabase Auth and REST isolate real signed-in owners and anonymous callers
   const after=must(await a.from('placements').select('zone').eq('id',wa.card).single())
   assert.equal(after.zone,'team')
 })
+
+test('planning data is private and role changes and handoffs leave live placements intact', async () => {
+  assert.ok(url && key && ['127.0.0.1','localhost'].includes(new URL(url).hostname))
+  async function owner() {
+    const db=client()
+    const {session}=must(await db.auth.signUp({email:`planning-${randomUUID()}@example.com`,password:randomUUID()}))
+    assert.ok(session)
+    return db
+  }
+  const [a,b]=await Promise.all([owner(),owner()])
+  const workspace=must(await a.rpc('create_company',{company_name:'Private plan test'}))
+  const other=must(await b.rpc('create_company',{company_name:'Separate plan test'}))
+  const card=must(await a.rpc('save_card',{workspace,card:null,fields:sampleFields({title:'Live lead'})}))
+  const teammate=must(await a.rpc('save_card',{workspace,card:null,fields:sampleFields({title:'Teammate',person_name:'Second person'})}))
+  const live=must(await a.from('placements').select('*').eq('company_id',workspace).order('id'))
+  const keyFor=id=>'person:'+live.find(row=>row.id===id).person_id
+  const add=async title=>must(await a.from('responsibilities').insert({company_id:workspace,title,hours:5,owner_key:keyFor(card),owner_label:'Founder'}).select().single())
+  const first=await add('Qualify leads'), second=await add('Approve pricing')
+  must(await a.rpc('move_responsibility',{workspace,item:second.id,anchor:first.id,after_anchor:false}))
+  assert.deepEqual(must(await a.from('responsibilities').select('id').eq('company_id',workspace).order('position')).map(row=>row.id),[second.id,first.id])
+  const ownerKey=keyFor(teammate)
+  assert.equal((await a.from('responsibilities').update({status:'Handed off'}).eq('id',first.id)).error?.code,'23514')
+  const completed=must(await a.from('responsibilities').update({status:'Handed off',completed_on:'2026-11-18',
+    owner_key:ownerKey,owner_label:'Second person',next_key:ownerKey,next_label:'Second person'}).eq('id',first.id).select().single())
+  assert.equal(completed.owner_key,ownerKey)
+  const baseline=must(await a.rpc('snapshot_scenario',{workspace,plan_name:'Baseline',baseline:true}))
+  must(await a.from('scenario_roles').update({cost_low:12000,currency:'EUR'}).eq('scenario_id',baseline).eq('source_placement',card))
+  const plan=must(await a.rpc('snapshot_scenario',{workspace,plan_name:'Private growth plan',baseline:false}))
+  const role=must(await a.from('scenario_roles').select('*').eq('scenario_id',plan).eq('source_placement',card).single())
+  assert.equal(role.cost_low,12000)
+  must(await a.from('scenario_roles').update({title:'Future lead',cost_low:900,cost_high:1200,period:'Monthly',currency:'USD'}).eq('id',role.id))
+  assert.deepEqual(must(await a.from('placements').select('*').eq('company_id',workspace).order('id')),live)
+  assert.equal(must(await a.from('scenario_roles').select('title').eq('scenario_id',baseline).eq('source_placement',card).single()).title,'Live lead')
+  for (const [table,id,column] of [['responsibilities',first.id,'title'],['scenarios',plan,'name'],['scenario_roles',role.id,'title']]) {
+    assert.deepEqual(must(await b.from(table).select('*').eq('company_id',workspace)),[])
+    assert.deepEqual(must(await b.from(table).update({[column]:'Forbidden'}).eq('id',id).select('id')),[])
+    assert.equal((await client().from(table).select('*')).error?.code,'42501')
+  }
+  assert.equal((await b.from('scenario_roles').insert({company_id:other,scenario_id:plan,title:'Cross-company role'})).error?.code,'23503')
+  assert.equal((await b.rpc('snapshot_scenario',{workspace,plan_name:'Forbidden',baseline:false})).error?.code,'42501')
+  const share=must(await a.rpc('publish_map_snapshot',{workspace,visible_cards:[card,teammate],include_headshots:false}))
+  const publicMap=JSON.stringify(must(await client().rpc('read_map_snapshot',{share_token:share})))
+  for(const privateText of ['Qualify leads','Private growth plan','Future lead','private@example.com']) assert.ok(!publicMap.includes(privateText))
+})

@@ -1,0 +1,21 @@
+.planning { max-width: 1050px; margin: 1.5rem auto; padding: 0 1rem 2rem; }
+.plan-heading,.plan-meta,.plan-list li { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; }
+.planning h2,.planning h3,.planning p { margin:0 0 .45rem; }
+.plan-heading,.plan-meta,.plan-cost,.plan-callout { margin-bottom:1rem; }
+.plan-meta,.plan-callout,.plan-cost,.plan-form,.plan-list li { padding:1rem; border:1px solid #8793a54a; border-radius:.75rem; }
+.plan-callout button { margin-left:.5rem; }
+.plan-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin:.8rem 0 1rem; width:100%; }
+.plan-form label { display:grid; gap:.3rem; align-content:start; }
+.plan-form input:not([type=checkbox]),.plan-form select,.plan-form textarea { width:100%; min-width:0; }
+.plan-form .plan-checkbox { display:flex; align-items:center; }
+.plan-form textarea { min-height:5rem; }
+.plan-wide,.plan-form>.plan-actions { grid-column:1/-1; }
+.plan-actions { display:flex; align-items:center; flex-wrap:wrap; gap:.45rem; }
+.plan-tabs { margin:1rem 0; }
+.plan-list { list-style:none; padding:0; display:grid; gap:.6rem; }
+.plan-list li>div:first-child { flex:1; min-width:min(14rem,100%); overflow-wrap:anywhere; }
+.plan-grip { cursor:grab; padding:.35rem; font-size:1.25rem; }
+.plan-table { overflow-x:auto; margin-bottom:.5rem; }
+.plan-table table { width:100%; border-collapse:collapse; }
+.plan-table th,.plan-table td { text-align:left; padding:.55rem; border-bottom:1px solid #8793a54a; white-space:nowrap; }
+@media(max-width:540px) { .plan-form {grid-template-columns:1fr;} }

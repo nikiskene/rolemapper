@@ -7,6 +7,8 @@ import { Avatar, ExportPanel, MapPager, RoleMapLayout, SharedMap, mapPageSize, o
 import { Billing, openBilling } from './Billing'
 import { Brand, Homepage, isLegalPath, LegalPage, PlannerPage } from './Home'
 
+const Handoffs = lazy(()=>import('./Planning').then(module=>({default:module.Handoffs})))
+const Scenarios = lazy(()=>import('./Planning').then(module=>({default:module.Scenarios})))
 const Admin = lazy(()=>import('./Admin').then(module=>({default:module.Admin})))
 const FeatureRequest = lazy(()=>import('./FeatureRequest').then(module=>({default:module.FeatureRequest})))
 
@@ -237,7 +239,7 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
         setError('');setBlocked(false);setEditing({zone:draft.zone,card,draft:draft.fields,draftPhoto:draft.photo})
       }}>Resume card</button>
     </section>}
-    {view==='Billing'?<Billing db={db!} workspace={id} count={count} returned={billingReturn==='returned'}/>:view!=='Map'?<section className="guide"><div><h2>{view}</h2><p>This view is planned for a later release.</p></div></section>:loaded&&<>
+    {view==='Billing'?<Billing db={db!} workspace={id} count={count} returned={billingReturn==='returned'}/>:view==='Handoffs'?loaded&&<Suspense fallback={<p className="planning">Loading handoffs…</p>}><Handoffs key={id} db={db!} workspace={id} map={map}/></Suspense>:view==='Scenarios'?loaded&&<Suspense fallback={<p className="planning">Loading scenarios…</p>}><Scenarios key={id} db={db!} workspace={id} map={map}/></Suspense>:loaded&&<>
       <div className="boardbar"><div><strong>{count} {count===1?'person':'people'}</strong><span>{map.cards.length} {map.cards.length===1?'placement':'placements'}</span></div><div>
         <button onClick={()=>setList(!directory)}>{directory?'Show map':'Show grouped list'}</button>
         <button disabled={!displayCards.length} onClick={()=>setExporting(true)}>Export rolemap</button>
