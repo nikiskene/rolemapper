@@ -76,7 +76,7 @@ export function PlannerPage() {
   </main><SiteFooter/></div>
 }
 
-const contact = <a href="mailto:hello@iacy.com">hello@iacy.com</a>
+const contact = <a href="mailto:rolemapper@iobs.cc">rolemapper@iobs.cc</a>
 const privacy = <>
   <h2>Who is responsible for your data?</h2>
   <p>IACy International FZCO, United Arab Emirates, operates Rolemapper and is the controller for account and site operations. Contact {contact} for privacy questions and requests.</p>

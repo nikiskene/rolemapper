@@ -30,3 +30,8 @@ X-Robots-Tag = "noindex, nofollow"
 for = "/signup"
 [headers.values]
 X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+for = "/admin"
+[headers.values]
+X-Robots-Tag = "noindex, nofollow"

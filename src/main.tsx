@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createClient, type Session } from '@supabase/supabase-js'
 import { errorText, linkedinUrl, zoneLabel, zones, type Card, type Company, type MapData, type Status, type Zone } from './model'
 import './style.css'
+import { Admin } from './Admin'
 import { Brand, Homepage, isLegalPath, LegalPage, PlannerPage } from './Home'
 
 const url = import.meta.env.VITE_SUPABASE_URL
@@ -42,6 +43,14 @@ function Auth({startRegister}:{startRegister:boolean}) {
 }
 
 function Workspace({session}:{session:Session}) {
+  const [isAdmin,setIsAdmin] = useState(false)
+  useEffect(()=>{
+    let active = true
+    void db!.rpc('is_platform_admin').then(({data,error})=>{
+      if (active) setIsAdmin(!error && data===true)
+    })
+    return ()=>{ active = false }
+  },[session.user.id])
   const [companies,setCompanies] = useState<Company[]>([])
   const [selected,setSelected] = useState('')
   const [creating,setCreating] = useState(false)
@@ -79,6 +88,7 @@ function Workspace({session}:{session:Session}) {
     <header className="topbar">{wordmark}<div className="workspace-controls">
       {companies.length>0&&<select aria-label="Company" disabled={busy} value={selected} onChange={e=>select(e.target.value)}>{companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>}
       <button onClick={()=>setCreating(v=>!v)} disabled={busy}>New company</button>
+      {isAdmin&&<a href="/admin">Administration</a>}
       <button onClick={async()=>{const {error}=await db!.auth.signOut();if(error)setError(error.message)}}>Sign out</button>
     </div></header>
     {error&&<p className="global-error error" role="alert">{error}</p>}
@@ -267,7 +277,7 @@ function MoveCard({card,map,close,move,busy,error}:{card:Card;map:MapData;close:
   </Panel>
 }
 
-function Account({startRegister}:{startRegister:boolean}) {
+function Account({startRegister, admin=false}:{startRegister:boolean;admin?:boolean}) {
   const [session,setSession]=useState<Session|null|undefined>()
   const [error,setError]=useState('')
   useEffect(()=>{
@@ -282,7 +292,8 @@ function Account({startRegister}:{startRegister:boolean}) {
   },[])
   if(!db)return <main className="welcome"><section className="auth-card">{wordmark}<h1>Sign-in is unavailable</h1><p>Please try again later.</p></section></main>
   if(session===undefined)return <main className="welcome"><p role={error?'alert':'status'}>{error||'Checking session…'}</p></main>
-  return session?<Workspace session={session} key={session.user.id}/>:<Auth startRegister={startRegister}/>
+  if (!session) return <Auth startRegister={startRegister}/>
+  return admin?<Admin db={db} key={session.user.id}/>:<Workspace session={session} key={session.user.id}/>
 }
 
 function App() {
@@ -290,6 +301,7 @@ function App() {
   if (path === '/login' || path === '/signup' || (path === '/' && authCallback)) {
     return <Account startRegister={path === '/signup'}/>
   }
+  if (path === '/admin') return <Account startRegister={false} admin/>
   if (path === '/planner') return <PlannerPage/>
   if (isLegalPath(path)) return <LegalPage path={path}/>
   return <Homepage/>

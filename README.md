@@ -34,4 +34,10 @@ The company record holds the one-owner relationship. The database creates its si
 
 The homepage and legal pages are public. The planner estimates incremental hiring costs on-device and keeps answers in memory until the page is closed or reloaded. Login and account creation use the existing Supabase workspace.
 
-The displayed annual price is USD 10 per company. Stripe checkout remains pending. The supplied Stripe product is `prod_VeO0RjrNtj9we1` and price is `price_1Ud5EMEQ9WPDgXa9OGWEr4n4`. Verify the product and price in the intended Stripe environment before wiring checkout.
+The displayed annual price is USD 10 per company. Stripe checkout remains pending. The supplied Stripe product is `prod_VeO0RjrNtj9we1` and price is `price_1Ud5EMEQ9WPDgXa9OGWEr4n4`. These identifiers are for Stripe live mode. Use a separate Stripe test price when testing checkout.
+
+## Platform administration
+
+Authorized administrators can open `/admin` to list accounts, inspect workspace IDs, and suspend or restore access. Suspension applies to workspace data, including requests from existing sessions. Changes are recorded in the private audit log. Company names, maps, cards and contact records stay subject to the existing company owner policies.
+
+The platform administration migration creates the role and controls. Role assignments are made separately by a privileged database operator. The production assignment script checks that the expected account ID and confirmed email match before assigning the role.
