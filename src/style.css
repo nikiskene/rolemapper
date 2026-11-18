@@ -42,3 +42,25 @@
 .feature-inbox li {display:grid;justify-content:stretch;gap:.7rem}
 .feature-inbox h3 {margin:0}
 .feature-text {white-space:pre-wrap;overflow-wrap:anywhere}
+
+.map-scroll {overflow-x:auto;padding:3px}
+.board.map-fixed {
+  min-width:700px;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-rows:repeat(3,minmax(80px,auto));
+  grid-template-areas:
+    "advisor-left investors advisor-right"
+    "cofounder-left founder cofounder-right"
+    "partner-left team partner-right";
+  align-items:start;
+}
+.map-fixed .advisor-left {grid-area:advisor-left}
+.map-fixed .investors {grid-area:investors}
+.map-fixed .advisor-right {grid-area:advisor-right}
+.map-fixed .cofounder-left {grid-area:cofounder-left}
+.map-fixed .founder {grid-area:founder}
+.map-fixed .cofounder-right {grid-area:cofounder-right}
+.map-fixed .partner-left {grid-area:partner-left}
+.map-fixed .team {grid-area:team}
+.map-fixed .partner-right {grid-area:partner-right}
+.map-fixed .zone-cards {max-height:420px;overflow-y:auto}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { errorText, zoneLabel, zones, type Status, type Zone } from './model'
 
@@ -11,6 +11,15 @@ export function mapPageSize(people:number) {
   if(people<=200)return 30
   if(people<=500)return 40
   return 50
+}
+
+export function RoleMapLayout({directory,children}:{directory:boolean;children:ReactNode}) {
+  return <div className={directory?'map-layout':'map-layout map-scroll'} tabIndex={directory?undefined:0}
+    role={directory?undefined:'region'} aria-label={directory?undefined:'Scrollable rolemap'}>
+    <div className={'board map-compact '+(directory?'list map-directory':'map-fixed')} aria-label="Company map">
+      {children}
+    </div>
+  </div>
 }
 
 export function Avatar({name,src}:{name:string;src?:string}) {
@@ -171,9 +180,12 @@ export function SharedMap({db,token}:{db:SupabaseClient;token:string}) {
   const [finished,setFinished]=useState(false)
   const [page,setPage]=useState(0)
   const [photos,setPhotos]=useState<Photos>({})
-  const [search,setSearch]=useState('')
+  const [list,setList]=useState<boolean|null>(null)
+  const [search,setSearch]=useState("")
+  const [narrow]=useState(()=>window.matchMedia('(max-width:720px)').matches)
   const pageSize=40
   const all=snapshot?.cards||[]
+  const directory=list??(narrow||all.length>20)
   const keyword=search.trim().toLowerCase()
   const matches=all.filter(card=>!keyword||[card.name,card.title,zoneLabel(card.zone)].some(label=>label?.toLowerCase().includes(keyword)))
   const visible=matches.slice(page*pageSize,(page+1)*pageSize)
@@ -201,17 +213,19 @@ export function SharedMap({db,token}:{db:SupabaseClient;token:string}) {
   return <main className="main">
     <h1>{snapshot.title}</h1><p>Rolemap snapshot · {all.length} placements</p>
     <div className="map-filters"><label>Search this map<input type="search" value={search}
-      onChange={event=>{setSearch(event.target.value);setPage(0)}}/></label></div>
+      onChange={event=>{setSearch(event.target.value);setPage(0)}}/></label>
+      <button onClick={()=>setList(!directory)}>{directory?'Show map':'Show grouped list'}</button>
+    </div>
     {!visible.length&&<p role="status">No tiles match your search.</p>}
-    <div className="board map-compact">{zones.map(([zone])=>{
+    <RoleMapLayout directory={directory}>{zones.map(([zone])=>{
       const cards=visible.filter(card=>card.zone===zone)
-      return cards.length>0&&<section className="zone" key={zone}><h2>{zoneLabel(zone)}</h2>
+      return cards.length>0&&<section className={'zone '+zone} key={zone}><h2>{zoneLabel(zone)}</h2>
         <div className="zone-cards">{cards.map(card=><article className="card shared-tile" key={card.id}>
           <Avatar name={card.name} src={card.photoId?photos[card.photoId]:undefined}/>
           <div><strong>{card.name}</strong><p>{card.title===card.name?card.status:card.title}</p></div>
         </article>)}</div>
       </section>
-    })}</div>
+    })}</RoleMapLayout>
     <MapPager page={page} pages={Math.ceil(matches.length/pageSize)} change={setPage}/>
   </main>
 }

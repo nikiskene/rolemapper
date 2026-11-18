@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createClient, type Session } from '@supabase/supabase-js'
 import { errorText, linkedinUrl, zoneLabel, zones, type Card, type Company, type MapData, type Status, type Zone } from './model'
 import './style.css'
-import { Avatar, ExportPanel, MapPager, SharedMap, mapPageSize, ownerPhotos, photoIds, prepareHeadshot, type DisplayCard, type Photos } from './MapExport'
+import { Avatar, ExportPanel, MapPager, RoleMapLayout, SharedMap, mapPageSize, ownerPhotos, photoIds, prepareHeadshot, type DisplayCard, type Photos } from './MapExport'
 import { Billing, openBilling } from './Billing'
 import { Brand, Homepage, isLegalPath, LegalPage, PlannerPage } from './Home'
 
@@ -123,7 +123,8 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
   const [over,setOver]=useState<string|null>(null)
   const billingReturn=new URLSearchParams(window.location.search).get('billing')
   const [view,setView]=useState(billingReturn?'Billing':'Map')
-  const [list,setList]=useState(false)
+  const [list,setList]=useState<boolean|null>(null)
+  const [narrow]=useState(()=>window.matchMedia('(max-width:720px)').matches)
   const [hiddenZones,setHiddenZones]=useState<Zone[]>([])
   const [hiddenCards,setHiddenCards]=useState<string[]>([])
   const [search,setSearch]=useState('')
@@ -219,7 +220,7 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
       .catch(error=>{if(active)setError(errorText(error))})
     return ()=>{active=false}
   },[id,visiblePhotoIds,photoRevision])
-  const directory=list||count>10||displayCards.length>20
+  const directory=list??(narrow||count>10||displayCards.length>20)
   const needsFounder=!map.cards.some(c=>c.zone==='founder'&&c.person_id)
   return <main className="main">
     <div className="hero"><div><p className="eyebrow">THE PEOPLE AROUND YOUR COMPANY</p><h1>{company.name}</h1><p>See who builds, backs and supports your company.</p></div>
@@ -238,7 +239,7 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
     </section>}
     {view==='Billing'?<Billing db={db!} workspace={id} count={count} returned={billingReturn==='returned'}/>:view!=='Map'?<section className="guide"><div><h2>{view}</h2><p>This view is planned for a later release.</p></div></section>:loaded&&<>
       <div className="boardbar"><div><strong>{count} {count===1?'person':'people'}</strong><span>{map.cards.length} {map.cards.length===1?'placement':'placements'}</span></div><div>
-        {count<=10&&displayCards.length<=20&&<button className="layout-toggle" onClick={()=>setList(!list)} aria-pressed={list}>{list?'Show map':'Show grouped list'}</button>}
+        <button onClick={()=>setList(!directory)}>{directory?'Show map':'Show grouped list'}</button>
         <button disabled={!displayCards.length} onClick={()=>setExporting(true)}>Export rolemap</button>
         <button className="primary" disabled={busy} onClick={()=>{setError('');setEditing({zone:needsFounder?'founder':'team'})}}>+ Add card</button>
       </div></div>
@@ -258,7 +259,7 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
         {(hiddenCards.length>0||hiddenZones.length>0||search)&&<button onClick={()=>{setHiddenCards([]);setHiddenZones([]);setSearch('');setMapPage(0)}}>Reset filters</button>}
       </div>}
       {displayCards.length>0&&!filtered.length&&<p role="status">No tiles match your filters.</p>}
-      <div className={'board map-compact'+(directory?' list map-directory':'')} aria-label="Company map">{zones.map(([zone,title,description])=>{
+      <RoleMapLayout directory={directory}>{zones.map(([zone,title,description])=>{
         const cards=map.cards.filter(card=>card.zone===zone&&visibleIds.has(card.id))
         if(!cards.length&&!dragged)return null
         if(hiddenZones.includes(zone))return null
@@ -286,7 +287,7 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
             </article>
           })}</div>
         </section>
-      })}</div>
+      })}</RoleMapLayout>
       <MapPager page={currentPage} pages={pages} change={setMapPage}/>
       <footer>Drag cards to rearrange the map, or use <strong>Move to…</strong> to pick a zone and position.</footer>
     </>}
