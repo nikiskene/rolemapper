@@ -108,3 +108,11 @@
   .site-footer nav {gap:12px 18px}
   .price-card {padding:20px}
 }
+.planner-coverage {border:1px solid var(--border);border-radius:8px;padding:12px 16px}
+.planner-coverage legend {font-weight:700}
+.planner-card .planner-coverage label {display:flex;align-items:flex-start;gap:.65rem}
+.planner-card .planner-coverage input {width:18px;height:18px;min-height:0;margin-top:.2rem;flex-shrink:0}
+.planner-coverage small {display:block;font-weight:400;color:#4d5461}
+.site-sources {background:#edece0;border-radius:8px;padding:10px 14px}
+.site-sources summary {cursor:pointer;font-weight:650}
+.site-sources ul {display:grid;gap:.75rem;overflow-wrap:anywhere}

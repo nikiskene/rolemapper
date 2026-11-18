@@ -71,7 +71,7 @@ export function Homepage() {
 export function PlannerPage() {
   return <div className="marketing"><SiteHeader/><main className="site-wrap site-section planner-page">
     <p className="site-kicker">Team planner</p><h1>Build a hiring plan</h1>
-    <p>Get a suggested starting team, hiring phases and an estimated budget. Your answers stay in this page.</p>
+    <p>Get a suggested starting team, hiring phases and an estimated budget. Start with your public website or enter a short description.</p>
     <Planner/>
   </main><SiteFooter/></div>
 }
@@ -81,7 +81,7 @@ const privacy = <>
   <h2>Who is responsible for your data?</h2>
   <p>IACy International FZCO, United Arab Emirates, operates Rolemapper and is the controller for account and site operations. Contact {contact} for privacy questions and requests.</p>
   <h2>What we process and why</h2>
-  <p>We use your email and account information to create and authenticate your account. Supabase Auth manages credentials. We store the company details and map content you enter so you can use the private workspace. The team planner runs in your browser and does not send your answers to us.</p>
+  <p>We use your email and account information to create and authenticate your account. Supabase Auth manages credentials. We store the company details and map content you enter so you can use the private workspace. If you ask the team planner to read a website, we receive the public URL and retrieve the pages for your review. Planning answers such as your team size and costs are calculated in your browser.</p>
   <p>Where GDPR applies, we process account and service data to provide the service you request. We use technical logs, which may include IP addresses and request information, for our legitimate interests in securing and maintaining the service. Where required, we process information to comply with legal obligations.</p>
   <p>When a workspace owner adds information about other people, the owner determines why that information is entered and is responsible for having a lawful basis, providing any required notice and responding to requests about that data. Rolemapper stores it to provide the workspace.</p>
   <h2>Providers and international processing</h2>
@@ -102,7 +102,7 @@ const legalPages = {
   </>},
   '/cookies': {title:'Cookies & storage', content:<>
     <h2>Sign-in and workspace preferences</h2><p>The app uses browser storage to keep you signed in and remember which company you selected for the current browser session. Signing out ends your app session. You can clear stored information using your browser controls.</p>
-    <h2>Marketing site and planner</h2><p>Rolemapper does not load analytics or advertising trackers. The planner keeps answers in the page while it is open. Reloading or closing it clears those answers.</p>
+    <h2>Marketing site and planner</h2><p>Rolemapper does not load analytics or advertising trackers. The planner keeps planning answers in the page while it is open. Reloading or closing it clears those answers.</p>
   </>},
 } as const
 

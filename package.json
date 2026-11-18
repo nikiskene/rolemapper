@@ -17,8 +17,11 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
+    "cheerio": "^1.2.0",
+    "ipaddr.js": "^2.5.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "robots-parser": "^3.0.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.15",
