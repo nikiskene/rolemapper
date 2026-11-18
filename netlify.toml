@@ -35,3 +35,9 @@ X-Robots-Tag = "noindex, nofollow"
 for = "/admin"
 [headers.values]
 X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+for = "/map/*"
+[headers.values]
+X-Robots-Tag = "noindex, nofollow"
+Cache-Control = "no-store"

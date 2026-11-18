@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createClient, type Session } from '@supabase/supabase-js'
 import { errorText, linkedinUrl, zoneLabel, zones, type Card, type Company, type MapData, type Status, type Zone } from './model'
 import './style.css'
+import { Avatar, ExportPanel, MapPager, SharedMap, mapPageSize, ownerPhotos, photoIds, prepareHeadshot, type DisplayCard, type Photos } from './MapExport'
 import { Billing, openBilling } from './Billing'
 import { Admin } from './Admin'
 import { Brand, Homepage, isLegalPath, LegalPage, PlannerPage } from './Home'
@@ -102,7 +103,7 @@ function Workspace({session}:{session:Session}) {
   </>
 }
 
-type CardDraft = { zone:Zone; cardId?:string; fields:Record<string,string> }
+type CardDraft = { zone:Zone; cardId?:string; fields:Record<string,string>; photo?:string }
 function MapEditor({company,accountId}:{company:Company;accountId:string}) {
   const [map,setMap]=useState<MapData>(emptyMap)
   const [loading,setLoading]=useState(true)
@@ -110,7 +111,7 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
   const [busy,setBusy]=useState(false)
   const [notice,setNotice]=useState('')
   const [error,setError]=useState('')
-  const [editing,setEditing]=useState<{zone:Zone; card?:Card; draft?:Record<string,string>}|null>(null)
+  const [editing,setEditing]=useState<{zone:Zone; card?:Card; draft?:Record<string,string>; draftPhoto?:string}|null>(null)
   const [blocked,setBlocked]=useState(false)
   const [checkedOut,setCheckedOut]=useState(false)
   const lastSave=useRef<CardDraft|null>(null)
@@ -120,6 +121,13 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
   const billingReturn=new URLSearchParams(window.location.search).get('billing')
   const [view,setView]=useState(billingReturn?'Billing':'Map')
   const [list,setList]=useState(false)
+  const [hiddenZones,setHiddenZones]=useState<Zone[]>([])
+  const [hiddenCards,setHiddenCards]=useState<string[]>([])
+  const [search,setSearch]=useState('')
+  const [mapPage,setMapPage]=useState(0)
+  const [photos,setPhotos]=useState<Photos>({})
+  const [photoRevision,setPhotoRevision]=useState(0)
+  const [exporting,setExporting]=useState(false)
   const operation=useRef(false)
   const id=company.id
   const draftKey='rolemapper:checkout:'+accountId+':'+id
@@ -138,13 +146,22 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
     } catch(error) { setError(errorText(error));setCheckedOut(false) }
   }
   async function readMap():Promise<MapData> {
+    async function readAll<T>(table:string,sort:string) {
+      const items:T[]=[]
+      for(let offset=0;;offset+=500){
+        const {data,error}=await db!.from(table).select('*').eq('company_id',id)
+          .order(sort).order('id').range(offset,offset+499)
+        if(error)throw error
+        items.push(...data as T[])
+        if(data.length<500)return items
+      }
+    }
     const [cards,people,organizations]=await Promise.all([
-      db!.from('placements').select('*').eq('company_id',id).order('rank').order('id'),
-      db!.from('people').select('*').eq('company_id',id).order('name'),
-      db!.from('organizations').select('*').eq('company_id',id).order('name')
+      readAll<MapData['cards'][number]>('placements','rank'),
+      readAll<MapData['people'][number]>('people','name'),
+      readAll<MapData['organizations'][number]>('organizations','name'),
     ])
-    for(const response of [cards,people,organizations]) if(response.error) throw response.error
-    return {cards:cards.data!,people:people.data!,organizations:organizations.data!}
+    return {cards,people,organizations}
   }
   useEffect(()=>{
     let alive=true
@@ -159,7 +176,7 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
     try {
       const {error}=await action();if(error)throw error
       saved=true;done()
-      setMap(await readMap());setNotice(success)
+      setMap(await readMap());setPhotoRevision(value=>value+1);setNotice(success)
     } catch(e){
       if(saved){setLoaded(false);setError('Changes were saved, but the map could not reload. ' + errorText(e))}
       else {
@@ -175,6 +192,31 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
     if(card&&card.id!==before)void move(card,zone,before)
   }
   const count=new Set(map.cards.flatMap(c=>c.person_id?[c.person_id]:[])).size
+  const peopleById=new Map(map.people.map(person=>[person.id,person]))
+  const organizationsById=new Map(map.organizations.map(org=>[org.id,org]))
+  const displayCards=zones.flatMap(([zone])=>map.cards.filter(card=>card.zone===zone).map(card=>({
+    id:card.id,zone,title:card.title,status:card.status,photoId:card.person_id,
+    name:(card.person_id&&peopleById.get(card.person_id)?.name) ||
+      (card.organization_id&&organizationsById.get(card.organization_id)?.name) || card.title,
+  } satisfies DisplayCard)))
+  const keyword=search.trim().toLowerCase()
+  const filtered=displayCards.filter(card=>!hiddenZones.includes(card.zone)&&!hiddenCards.includes(card.id)&&
+    (!keyword||[card.name,card.title,zoneLabel(card.zone),card.status].some(value=>value?.toLowerCase().includes(keyword))))
+  const pageSize=mapPageSize(count)
+  const pages=Math.ceil(filtered.length/pageSize)
+  const currentPage=Math.min(mapPage,Math.max(0,pages-1))
+  const onPage=filtered.slice(currentPage*pageSize,(currentPage+1)*pageSize)
+  const visibleIds=new Set(onPage.map(card=>card.id))
+  const visiblePhotoIds=photoIds(onPage).join(',')
+  useEffect(()=>{
+    let active=true
+    setPhotos({})
+    if(visiblePhotoIds)void ownerPhotos(db!,id,visiblePhotoIds.split(','))
+      .then(result=>{if(active)setPhotos(result)})
+      .catch(error=>{if(active)setError(errorText(error))})
+    return ()=>{active=false}
+  },[id,visiblePhotoIds,photoRevision])
+  const directory=list||count>10||displayCards.length>20
   const needsFounder=!map.cards.some(c=>c.zone==='founder'&&c.person_id)
   return <main className="main">
     <div className="hero"><div><p className="eyebrow">THE PEOPLE AROUND YOUR COMPANY</p><h1>{company.name}</h1><p>See who builds, backs and supports your company.</p></div>
@@ -188,46 +230,69 @@ function MapEditor({company,accountId}:{company:Company;accountId:string}) {
       <button onClick={()=>{
         const card=map.cards.find(candidate=>candidate.id===draft.cardId)
         if(draft.cardId && !card){setError('This card no longer exists.');return}
-        setError('');setBlocked(false);setEditing({zone:draft.zone,card,draft:draft.fields})
+        setError('');setBlocked(false);setEditing({zone:draft.zone,card,draft:draft.fields,draftPhoto:draft.photo})
       }}>Resume card</button>
     </section>}
     {view==='Billing'?<Billing db={db!} workspace={id} count={count} returned={billingReturn==='returned'}/>:view!=='Map'?<section className="guide"><div><h2>{view}</h2><p>This view is planned for a later release.</p></div></section>:loaded&&<>
       <div className="boardbar"><div><strong>{count} {count===1?'person':'people'}</strong><span>{map.cards.length} {map.cards.length===1?'placement':'placements'}</span></div><div>
-        <button className="layout-toggle" onClick={()=>setList(!list)} aria-pressed={list}>{list?'Show map':'Show grouped list'}</button>
+        {count<=10&&displayCards.length<=20&&<button className="layout-toggle" onClick={()=>setList(!list)} aria-pressed={list}>{list?'Show map':'Show grouped list'}</button>}
+        <button disabled={!displayCards.length} onClick={()=>setExporting(true)}>Export rolemap</button>
         <button className="primary" disabled={busy} onClick={()=>{setError('');setEditing({zone:needsFounder?'founder':'team'})}}>+ Add card</button>
       </div></div>
       {needsFounder&&<section className="guide"><div><p className="eyebrow">START IN THE CENTER</p><h2>Who is the founding lead?</h2><p>Add the founder’s name, then place the people and roles around them.</p></div><button className="primary" disabled={busy} onClick={()=>{setError('');setEditing({zone:'founder'})}}>Add founding lead</button></section>}
-      <div className={list?'board list':'board'} aria-label="Company map">{zones.map(([zone,title,description],index)=>{
-        const cards=map.cards.filter(card=>card.zone===zone)
+      {displayCards.length>0&&<div className="map-filters">
+        <label>Search people, titles or functions<input type="search" value={search} onChange={event=>{setSearch(event.target.value);setMapPage(0)}}/></label>
+        <details><summary>Show or hide functions</summary>
+          <div className="map-filter-options">{zones.filter(([zone])=>displayCards.some(card=>card.zone===zone)).map(([zone])=><label className="check-line" key={zone}>
+            <input type="checkbox" checked={!hiddenZones.includes(zone)} onChange={event=>{
+              setMapPage(0);setHiddenZones(items=>event.target.checked?items.filter(item=>item!==zone):[...items,zone])
+            }}/>{zoneLabel(zone)}</label>)}</div>
+        </details>
+        {hiddenCards.length>0&&<details><summary>Hidden tiles ({hiddenCards.length})</summary><div className="map-filter-options">
+          {displayCards.filter(card=>hiddenCards.includes(card.id)).map(card=><button key={card.id}
+            onClick={()=>setHiddenCards(items=>items.filter(item=>item!==card.id))}>Show {card.name}</button>)}
+        </div></details>}
+        {(hiddenCards.length>0||hiddenZones.length>0||search)&&<button onClick={()=>{setHiddenCards([]);setHiddenZones([]);setSearch('');setMapPage(0)}}>Reset filters</button>}
+      </div>}
+      {displayCards.length>0&&!filtered.length&&<p role="status">No tiles match your filters.</p>}
+      <div className={'board map-compact'+(directory?' list map-directory':'')} aria-label="Company map">{zones.map(([zone,title,description])=>{
+        const cards=map.cards.filter(card=>card.zone===zone&&visibleIds.has(card.id))
+        if(!cards.length&&!dragged)return null
+        if(hiddenZones.includes(zone))return null
         return <section aria-label={zoneLabel(zone)} className={'zone '+zone+(over===zone?' drop-target':'')} key={zone}
           onDragOver={e=>{if(dragged&&!busy){e.preventDefault();setOver(zone)}}}
           onDrop={e=>{e.preventDefault();drop(zone,null)}}>
-          <div className="zone-header"><span className="zone-index">{String(index+1).padStart(2,'0')}</span><div><h2>{title}</h2><p>{description}</p></div><button aria-label={`Add card to ${zoneLabel(zone)}`} disabled={busy} onClick={()=>{setError('');setEditing({zone})}}>+</button></div>
+          <div className="zone-header"><div><h2>{title}</h2><p>{description}</p></div><button aria-label={`Add card to ${zoneLabel(zone)}`} disabled={busy} onClick={()=>{setError('');setEditing({zone})}}>+</button></div>
           <div className="zone-cards">{cards.length===0&&<p className="empty">No cards yet</p>}{cards.map(card=>{
-            const person=map.people.find(p=>p.id===card.person_id)
-            const organization=map.organizations.find(o=>o.id===card.organization_id)
+            const person=card.person_id?peopleById.get(card.person_id):undefined
+            const organization=card.organization_id?organizationsById.get(card.organization_id):undefined
             return <article key={card.id} className={'card'+(over===card.id?' drop-target':'')+(dragged===card.id?' dragging':'')} draggable={!busy}
               onDragStart={e=>{e.dataTransfer.setData('text/plain',card.id);e.dataTransfer.effectAllowed='move';setDragged(card.id)}}
               onDragEnd={()=>{setDragged(null);setOver(null)}}
               onDragOver={e=>{if(dragged&&!busy){e.preventDefault();e.stopPropagation();setOver(card.id)}}}
               onDrop={e=>{e.preventDefault();e.stopPropagation();drop(zone,card.id)}}>
               <button className="card-main" disabled={busy} onClick={()=>{setError('');setEditing({zone,card})}}>
-                <span className={'status '+card.status.toLowerCase()}>{card.status}</span><strong>{person?.name??organization?.name??card.title}</strong>
-                {(person||organization)&&<span>{card.title}{person&&organization?' · '+organization.name:''}</span>}
-                {card.remit&&<small>{card.remit}</small>}
+                <Avatar name={person?.name??organization?.name??card.title} src={person?photos[person.id]:undefined}/>
+                <span className="card-text"><strong>{person?.name??organization?.name??card.title}</strong>
+                  <span>{person||organization?card.title:card.status}</span>
+                </span>
               </button>
-              <button className="move" aria-label={`Move ${person?.name??organization?.name??card.title} · ${card.title}`} disabled={busy} onClick={()=>{setError('');setMoving(card)}}>Move to…</button>
+              <div className="tile-actions"><button className="move" aria-label={`Move ${person?.name??organization?.name??card.title} · ${card.title}`} disabled={busy} onClick={()=>{setError('');setMoving(card)}}>Move to…</button>
+              <button className="move" disabled={busy} onClick={()=>setHiddenCards(items=>[...items,card.id])}
+                aria-label={`Hide ${person?.name??organization?.name??card.title}`}>Hide</button></div>
             </article>
           })}</div>
         </section>
       })}</div>
+      <MapPager page={currentPage} pages={pages} change={setMapPage}/>
       <footer>Drag cards to rearrange the map, or use <strong>Move to…</strong> to pick a zone and position.</footer>
     </>}
-    {editing&&<CardEditor {...editing} map={map} busy={busy||checkedOut} error={error} close={()=>{setEditing(null);setBlocked(false)}}
+    {exporting&&<Panel title="Export rolemap" close={()=>setExporting(false)} busy={false}><ExportPanel db={db!} workspace={id} title={company.name} cards={filtered}/></Panel>}
+    {editing&&<CardEditor {...editing} map={map} workspace={id} busy={busy||checkedOut} error={error} close={()=>{setEditing(null);setBlocked(false)}}
       upgrade={blocked?()=>void upgrade():undefined}
-      save={fields=>{
-        lastSave.current={zone:editing.zone,cardId:editing.card?.id,fields}
-        return mutate(()=>db!.rpc('save_card',{workspace:id,card:editing.card?.id??null,fields}),()=>{
+      save={(fields,photo)=>{
+        lastSave.current={zone:editing.zone,cardId:editing.card?.id,fields,photo}
+        return mutate(()=>db!.rpc('save_card_with_headshot',{workspace:id,card:editing.card?.id??null,fields,photo:photo??null}),()=>{
           if(editing.draft){sessionStorage.removeItem(draftKey);setDraft(null)}
           setEditing(null)
         })
@@ -246,13 +311,23 @@ function Panel({title,close,busy,children}:{title:string;close:()=>void;busy:boo
   </dialog>
 }
 
-function CardEditor({zone,card,draft,map,busy,error,close,save,remove,upgrade}:{zone:Zone;card?:Card;draft?:Record<string,string>;map:MapData;busy:boolean;error:string;close:()=>void;save:(fields:Record<string,string>)=>void;remove?:()=>void;upgrade?:()=>void}) {
+function CardEditor({zone,card,draft,draftPhoto,map,workspace,busy,error,close,save,remove,upgrade}:{zone:Zone;card?:Card;draft?:Record<string,string>;draftPhoto?:string;map:MapData;workspace:string;busy:boolean;error:string;close:()=>void;save:(fields:Record<string,string>,photo?:string)=>void;remove?:()=>void;upgrade?:()=>void}) {
   const [status,setStatus]=useState<Status>((draft?.status as Status|undefined)??card?.status??'Filled')
   const [kind,setKind]=useState(draft ? (draft.organization_id||draft.organization_name?'partner':'person') : (card?.organization_id?'partner':'person'))
   const [personId,setPersonId]=useState(draft?.person_id??card?.person_id??'')
   const [orgId,setOrgId]=useState(draft?.organization_id??card?.organization_id??'')
   const [validation,setValidation]=useState('')
   const [confirmRemove,setConfirmRemove]=useState(false)
+  const [photo,setPhoto]=useState<string|undefined>(draftPhoto)
+  const [storedPhoto,setStoredPhoto]=useState<string|undefined>()
+  const [photoBusy,setPhotoBusy]=useState(false)
+  useEffect(()=>{
+    let active=true
+    setStoredPhoto(undefined)
+    if(personId)void ownerPhotos(db!,workspace,[personId])
+      .then(result=>{if(active)setStoredPhoto(result[personId])}).catch(()=>{})
+    return ()=>{active=false}
+  },[personId,workspace])
   const person=map.people.find(p=>p.id===personId)
   const org=map.organizations.find(o=>o.id===orgId)
   const linkedin=person&&linkedinUrl(person.linkedin)
@@ -268,11 +343,11 @@ function CardEditor({zone,card,draft,map,busy,error,close,save,remove,upgrade}:{
     if(status==='Filled'&&kind==='person'&&!fields.person_name){setValidation('Enter the person’s name.');return}
     if(status==='Filled'&&kind==='partner'&&!fields.organization_name){setValidation('Enter the organization’s name.');return}
     if(!fields.person_name&&['bio','linkedin','email','affiliation'].some(k=>fields[k])){setValidation('Enter a contact name to save contact details.');return}
-    void save(fields)
+    void save(fields,fields.person_name?photo:undefined)
   }
   return <Panel title={card?'Card details':zone==='founder'?'Add founding lead':'Add card'} close={close} busy={busy}>
     <form onSubmit={submit}>
-      <fieldset disabled={busy}>
+      <fieldset disabled={busy||photoBusy}>
         <label>Zone<select name="zone" defaultValue={draft?.zone??zone}>{zones.map(([z])=><option key={z} value={z}>{zoneLabel(z)}</option>)}</select></label>
         <div className="fields"><label>Role title<input name="title" defaultValue={draft?.title??card?.title??(zone==='founder'?'Founder':'')} required maxLength={120}/></label>
         <label>Status<select name="status" value={status} onChange={e=>setStatus(e.target.value as Status)}><option>Filled</option><option>Open</option><option>Later</option></select></label></div>
@@ -281,10 +356,24 @@ function CardEditor({zone,card,draft,map,busy,error,close,save,remove,upgrade}:{
           <label>Card type<select value={kind} onChange={e=>setKind(e.target.value)}><option value="person">Person</option><option value="partner">Partner organization</option></select></label>
           {kind==='partner'&&<><label>Organization<select name="organization_id" value={orgId} onChange={e=>setOrgId(e.target.value)}><option value="">New organization</option>{map.organizations.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
           <label>Organization name<input key={orgId} name="organization_name" defaultValue={(draft && orgId===draft.organization_id ? draft.organization_name : undefined)??org?.name} maxLength={120} required/></label></>}
-          {(map.people.length>0||kind==='partner')&&<label>{kind==='partner'?'Named contact (optional)':'Person record'}<select name="person_id" value={personId} onChange={e=>setPersonId(e.target.value)}><option value="">{kind==='partner'?'No existing contact':'New person'}</option>{map.people.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
+          {(map.people.length>0||kind==='partner')&&<label>{kind==='partner'?'Named contact (optional)':'Person record'}<select name="person_id" value={personId} onChange={e=>{setPersonId(e.target.value);setPhoto(undefined)}}><option value="">{kind==='partner'?'No existing contact':'New person'}</option>{map.people.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
           {person&&<p className="hint">Contact details are shared across this person’s roles.</p>}
           <div className="person-fields" key={personId}>
             <label>Name<input name="person_name" defaultValue={(draft && personId===draft.person_id ? draft.person_name : undefined)??person?.name} required={kind==='person'||!!personId} maxLength={120} autoFocus={!card&&zone==='founder'}/></label>
+            <div className="headshot-edit">
+              <Avatar name={person?.name||'Person'} src={photo??storedPhoto}/>
+              <label>Headshot<input type="file" accept="image/jpeg,image/png,image/webp" onChange={async event=>{
+                const input=event.currentTarget
+                const file=input.files?.[0]
+                input.value=''
+                if(!file)return
+                setPhotoBusy(true);setValidation('')
+                try{setPhoto(await prepareHeadshot(file))}
+                catch(error){setValidation(errorText(error))}
+                finally{setPhotoBusy(false)}
+              }}/></label>
+              {(photo??storedPhoto)&&<button type="button" onClick={()=>setPhoto('')}>Remove headshot</button>}
+            </div>
             <label>Bio<textarea name="bio" defaultValue={(draft && personId===draft.person_id ? draft.bio : undefined)??person?.bio} maxLength={3000}/></label>
             <label>LinkedIn<input type="url" name="linkedin" defaultValue={(draft && personId===draft.person_id ? draft.linkedin : undefined)??person?.linkedin} maxLength={500} placeholder="https://www.linkedin.com/in/…"/>{linkedin&&<a href={linkedin} target="_blank" rel="noopener noreferrer">Open LinkedIn profile</a>}</label>
             <label>Email<input name="email" type="email" defaultValue={(draft && personId===draft.person_id ? draft.email : undefined)??person?.email} maxLength={254}/></label>
@@ -295,7 +384,7 @@ function CardEditor({zone,card,draft,map,busy,error,close,save,remove,upgrade}:{
       {(validation||error)&&<p className="error" role="alert">{validation||error}</p>}
       {upgrade&&<button type="button" className="primary" disabled={busy} onClick={upgrade}>Upgrade for $10/year</button>}
       {confirmRemove&&<p>Remove this placement from the map? The person or organization stays available for other roles.</p>}
-      <div className="panel-actions"><button className="primary" disabled={busy}>{busy?'Saving…':'Save card'}</button>
+      <div className="panel-actions"><button className="primary" disabled={busy||photoBusy}>{busy?'Saving…':photoBusy?'Preparing image…':'Save card'}</button>
       {remove&&<button type="button" disabled={busy} onClick={()=>{if(confirmRemove)remove();else setConfirmRemove(true)}}>{confirmRemove?'Confirm removal':'Remove card'}</button>}
       </div>
     </form>
@@ -342,6 +431,8 @@ function App() {
     return <Account startRegister={path === '/signup'}/>
   }
   if (path === '/admin') return <Account startRegister={false} admin/>
+  const snapshot=path.match(/^\/map\/([0-9a-f-]{36})$/i)
+  if(snapshot&&db)return <SharedMap db={db} token={snapshot[1]}/>
   if (path === '/planner') return <PlannerPage/>
   if (isLegalPath(path)) return <LegalPage path={path}/>
   return <Homepage/>
