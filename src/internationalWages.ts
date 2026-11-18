@@ -101,30 +101,47 @@ function canadaWage(data:Canada,city:string,code:string):Wage|undefined {
   }
 }
 
-const austrianGroups:Partial<Record<Discipline,[string,string]>> = {
-  'Software developer':['25','Information and communications technology professionals'],
-  'Customer support':['42','Customer services clerks'],
-  'Accountant':['24','Business and administration professionals'],
-  'Financial analyst':['24','Business and administration professionals'],
-  'Marketing specialist':['24','Business and administration professionals'],
-  'Public relations':['24','Business and administration professionals'],
+const austrianGroups = {
+  '12':'Business and administration managers',
+  '13':'Production and specialised services managers',
+  '24':'Business and administration professionals',
+  '25':'Information and communications technology professionals',
+  '26':'Legal, social and cultural professionals',
+  '31':'Science and engineering associate professionals',
+  '33':'Business and administration associate professionals',
+  '35':'Information and communications technicians',
+  '42':'Customer services clerks',
+} as const
+type AustrianGroup = keyof typeof austrianGroups
+
+const austrianDisciplines:Partial<Record<Discipline,AustrianGroup>> = {
+  'Software developer':'25', 'Web designer':'25', 'Marketing specialist':'24', 'Marketing manager':'12',
+  'Sales manager':'12', 'Project management':'24', 'Operations coordinator':'33', 'Accountant':'24',
+  'Financial analyst':'24', 'Customer support':'42', 'Event planner':'33', 'Public relations':'24',
+}
+const austrianPlannerRoles:Record<string,AustrianGroup> = {
+  'chapter program lead':'33', 'local partnerships lead':'24', 'partnerships lead':'24',
+  'research and editorial coordinator':'26', 'research partnerships lead':'24',
+  'dispatch and service operations lead':'33', 'provider network and quality lead':'33',
+  'solutions engineer':'25', 'account executive':'33', 'enterprise partnerships lead':'33',
+  'local market launch lead':'24', 'customer success lead':'33', 'quality lead':'33',
+}
+
+function austrianWage(data:Austria,group:AustrianGroup):Wage|undefined {
+  const row = data[group]
+  if(!row || row[1]===null) return
+  const [original,amount,low,high] = row
+  return {title:austrianGroups[group],code:'ÖISCO-08 '+group,amount,low,high,currency:'EUR',period:'hour',
+    statistic:'median',geography:'Austria national',reference:'October 2022',
+    publisher:'Statistics Austria · Structure of Earnings Survey, Table 5',
+    url:'https://www.statistik.at/fileadmin/pages/335/VSE2022_tab2_bruttostundenverdienste_nach_merkmalen_der_besch.ods',
+    licence:'https://www.statistik.at/en/about-us/responsibilities-and-principles/legal-basis/website-information',
+    basis:'Gross hourly earnings excluding overtime, for employees of covered private establishments with at least 10 workers. Apprentices excluded.',
+    range:'P25–P75',notes:'Adapted from Statistics Austria. Published group: '+original}
 }
 
 function publishedWage(market:string,city:string,discipline:Discipline,data:WageData):Wage|undefined {
   const [noc,soc,mom] = disciplines[discipline]
-  if(market==='Austria'&&data.austria){
-    const group = austrianGroups[discipline]
-    const row = group && data.austria[group[0]]
-    if(!group || !row || row[1]===null) return
-    const [original,amount,low,high] = row
-    return {title:group[1],code:'ÖISCO-08 '+group[0],amount,low,high,currency:'EUR',period:'hour',
-      statistic:'median',geography:'Austria national',reference:'October 2022',
-      publisher:'Statistics Austria · Structure of Earnings Survey, Table 5',
-      url:'https://www.statistik.at/fileadmin/pages/335/VSE2022_tab2_bruttostundenverdienste_nach_merkmalen_der_besch.ods',
-      licence:'https://www.statistik.at/en/about-us/responsibilities-and-principles/legal-basis/website-information',
-      basis:'Gross hourly earnings excluding overtime, for employees of covered private establishments with at least 10 workers. Apprentices excluded.',
-      range:'P25–P75',notes:'Adapted from Statistics Austria. Published group: '+original}
-  }
   if(market==='Canada'&&data.canada) return canadaWage(data.canada,city,noc)
   if(market==='United Kingdom'){
     const local = normalize(city)==='london' ? data.london?.[soc] : undefined
@@ -177,6 +194,17 @@ export function wageOptions(role:string,market:string,city:string,data:WageData)
   }
   const key = normalize(role)
   const direct = Object.hasOwn(roleDisciplines,key) ? roleDisciplines[key] : undefined
+  if(market==='Austria'&&data.austria){
+    const austria = data.austria
+    const match = Object.hasOwn(austrianPlannerRoles,key) ? austrianPlannerRoles[key] : direct && austrianDisciplines[direct]
+    const choices:AustrianGroup[] = ambiguous(role) ? ['24','12']
+      : key==='product designer' ? ['25','26']
+      : match ? [match] : Object.keys(austrianGroups) as AustrianGroup[]
+    return choices.flatMap(group=>{
+      const wage = austrianWage(austria,group)
+      return wage ? [wage] : []
+    })
+  }
   const candidates:Discipline[] = ambiguous(role)?['Project management','Marketing manager']:direct?[direct]:[]
   return candidates.flatMap(candidate=>{
     const wage = publishedWage(market,city,candidate,data)

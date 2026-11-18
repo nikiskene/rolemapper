@@ -56,8 +56,9 @@ export function Planner() {
     const hireMarket = input.market || market
     const hireCity = input.market ? input.city??'' : city
     const hireCurrency = marketCurrencies[hireMarket] ?? currency
-    const options = named ? wageOptions(role,hireMarket,hireCity,wageData) : []
-    const wage = isProductRole(role) ? options.find(option=>option.title===input.proxy) : options[0]
+    const options = named||hireMarket==='Austria' ? wageOptions(role,hireMarket,hireCity,wageData) : []
+    const needsProxy = isProductRole(role) || options.length>1
+    const wage = needsProxy ? options.find(option=>option.title===input.proxy) : options[0]
     const allocation = Number(input.allocation??100)/100
     const wageMonthly = wage ? monthlyWage(wage,Number(hours),Number(weeks))*allocation : null
     const manual = input.manual?.[hireCurrency] ?? ''
@@ -68,7 +69,7 @@ export function Planner() {
     const assumptionSource = manualWage!==null ? 'Manual override' : published!==null ? 'Published wage' : fallback!==null ? 'Shared fallback' : ''
     const employerRate = input.burden || burden
     const employer = assumption===null||employerRate==='' ? null : assumption*(1+Number(employerRate)/100)
-    return {id,role,named:!!named,market:hireMarket,city:hireCity,currency:hireCurrency,input,options,wage,assumption,assumptionSource,employer}
+    return {id,role,named:!!named,market:hireMarket,city:hireCity,currency:hireCurrency,input,options,wage,needsProxy,assumption,assumptionSource,employer}
   })
   const missing = hiresByRole.filter(hire=>hire.assumption===null).length
   const employerMissing = hiresByRole.filter(hire=>hire.assumption!==null&&hire.employer===null).length
@@ -192,7 +193,13 @@ export function Planner() {
           setCity(next==='Singapore'?'Singapore':'')
           if(marketCurrencies[next]&&!cost&&!setup) setCurrency(marketCurrencies[next])
         }}><MarketChoices/></select></label>
-        <LocationInput id="wage-cities" market={market} city={city} change={setCity} data={wageData}/>
+        <LocationInput id="wage-cities" market={market} city={city} change={value=>{
+          setCity(value)
+          if(!market&&/^(vienna|wien)$/i.test(value.trim())){
+            setMarket('Austria')
+            if(!cost&&!setup) setCurrency('EUR')
+          }
+        }} data={wageData}/>
         <label>Currency for shared budget inputs<select value={currency} onChange={event=>setCurrency(event.target.value)}>
           {currencies.map(code=><option key={code}>{code}</option>)}
         </select></label>
@@ -234,7 +241,7 @@ export function Planner() {
       {hiresByRole.length>0&&<details className="site-sources"><summary>Cost by role</summary>
         <ul>{hiresByRole.map(hire=><li key={hire.id}>
           <strong>{hire.role}</strong>{hire.city&&' · '+hire.city}
-          {hire.wage&&<WageDetails wage={hire.wage} role={hire.role} proxy={isProductRole(hire.role)} hours={Number(hours)} weeks={Number(weeks)}/>}
+          {hire.wage&&<WageDetails wage={hire.wage} role={hire.role} proxy={hire.needsProxy} hours={Number(hours)} weeks={Number(weeks)}/>}
           <p>Monthly wage used for planning · {hire.assumption===null?'Estimate needed':amountText(hire.currency,hire.assumption)+' · '+hire.assumptionSource}</p>
           <p>Estimated monthly employer cost · {hire.employer===null?'Unknown':amountText(hire.currency,hire.employer)}</p>
         </li>)}</ul>
