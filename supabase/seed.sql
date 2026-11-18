@@ -1,0 +1,1 @@
+-- Fictional sample is claimed by the signed-in owner via npm run seed (local only).
