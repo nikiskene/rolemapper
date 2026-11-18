@@ -60,7 +60,7 @@ export function Homepage() {
         <div className="section-intro"><p className="site-kicker">Pricing</p><h2>Five people free.</h2><p>One person can hold several roles and still counts once.</p></div>
         <div className="price-grid">
           <article className="price-card"><h3>Free</h3><p className="price"><strong>$0</strong></p><p>Map up to five people.</p><a className="site-button secondary" href="/signup">Create a free account</a></article>
-          <article className="price-card paid"><h3>Paid plan</h3><p className="price"><strong>$10</strong> USD / year / company</p><p>For maps with six or more people.</p><p className="plan-note">Paid subscriptions are coming soon.</p></article>
+          <article className="price-card paid"><h3>Paid plan</h3><p className="price"><strong>$10</strong> USD / year / company</p><p>For maps with six or more people.</p><a className="site-button" href="/login?billing=manage">Upgrade a workspace</a></article>
         </div>
       </section>
     </main>
@@ -97,7 +97,7 @@ const legalPages = {
   '/terms': {title:'Terms of use', content:<>
     <h2>Using Rolemapper</h2><p>Rolemapper is a company mapping and planning service operated by IACy International FZCO. Keep your sign-in details secure and only add information you are entitled to use. You are responsible for the content you enter into your workspace.</p>
     <h2>Planning estimates</h2><p>The team planner uses the assumptions you enter and provides illustrative suggestions. Review hiring assumptions, local costs and legal requirements before acting on a plan.</p>
-    <h2>Subscriptions</h2><p>Paid subscriptions are not available yet. Any future checkout will show the applicable price and billing terms before you subscribe.</p>
+    <h2>Subscriptions</h2><p>Paid subscriptions renew annually for each workspace until canceled. Stripe Checkout shows the applicable price before purchase. Use Manage billing in the workspace to cancel renewal or update your payment details.</p>
     <h2>Questions and account requests</h2><p>Contact {contact} for help with the service or to request account closure.</p>
   </>},
   '/cookies': {title:'Cookies & storage', content:<>

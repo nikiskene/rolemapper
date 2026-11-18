@@ -34,7 +34,7 @@ The company record holds the one-owner relationship. The database creates its si
 
 The homepage and legal pages are public. The planner estimates incremental hiring costs on-device and keeps answers in memory until the page is closed or reloaded. Login and account creation use the existing Supabase workspace.
 
-The displayed annual price is USD 10 per company. Stripe checkout remains pending. The supplied Stripe product is `prod_VeO0RjrNtj9we1` and price is `price_1Ud5EMEQ9WPDgXa9OGWEr4n4`. These identifiers are for Stripe live mode. Use a separate Stripe test price when testing checkout.
+The displayed annual price is USD 10 per company. The supplied Stripe product is `prod_VeO0RjrNtj9we1` and price is `price_1Ud5EMEQ9WPDgXa9OGWEr4n4`. These identifiers are for Stripe live mode. Use a separate Stripe test price when testing checkout.
 
 ## Platform administration
 
@@ -48,4 +48,4 @@ The production destination is `https://rolemapper.cc/api/stripe/webhook`. Config
 
 Set `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` and `SUPABASE_SECRET_KEY` in the Netlify Functions runtime. Production uses the live price above by default. A test environment requires `STRIPE_MODE=test`, its own test credentials, test price, and a separate Supabase project. The webhook verifies the signature and mode, then reads Stripe's current subscription state. It only synchronizes customers already associated with a workspace in `rolemapper_billing.accounts`.
 
-Customer creation, workspace linking, Checkout, and the billing portal will be wired together in the purchase flow. The webhook by itself does not enable checkout or change map limits.
+Workspace owners can upgrade or open the Stripe customer portal from the Billing tab. Stripe Checkout uses the configured USD 10 annual price. Subscription access is updated by signed webhooks. The database enforces the five-person free limit on map placements and preserves existing maps when access lapses. If the account-wide Stripe Customer Portal allows plan switching, configure a dedicated Rolemapper portal and set `STRIPE_PORTAL_CONFIGURATION_ID` for Netlify Functions.

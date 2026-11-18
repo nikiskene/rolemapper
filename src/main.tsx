@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createClient, type Session } from '@supabase/supabase-js'
 import { errorText, linkedinUrl, zoneLabel, zones, type Card, type Company, type MapData, type Status, type Zone } from './model'
 import './style.css'
+import { Billing, openBilling } from './Billing'
 import { Admin } from './Admin'
 import { Brand, Homepage, isLegalPath, LegalPage, PlannerPage } from './Home'
 
@@ -64,7 +65,7 @@ function Workspace({session}:{session:Session}) {
       if(error) setError(error.message)
       else {
         setCompanies(data);setCompaniesLoaded(true)
-        const previous=sessionStorage.getItem('rolemapper:'+session.user.id)
+        const previous=new URLSearchParams(window.location.search).get('workspace') || sessionStorage.getItem('rolemapper:'+session.user.id)
         setSelected(data.find(c=>c.id===previous)?.id??data[0]?.id??'')
       }
       setBusy(false)
@@ -97,25 +98,45 @@ function Workspace({session}:{session:Session}) {
       <p className="eyebrow">STEP 01 / WORKSPACE</p><h1>Create a company</h1><p>Each company has its own private map.</p>
       <form onSubmit={create}><label>Company name<input name="name" maxLength={100} required autoFocus/></label><button className="primary" disabled={busy}>{busy?'Creating…':'Create company'}</button></form>
     </section>}
-    {company&&<MapEditor company={company} key={company.id}/>}
+    {company&&<MapEditor company={company} accountId={session.user.id} key={company.id}/>}
   </>
 }
 
-function MapEditor({company}:{company:Company}) {
+type CardDraft = { zone:Zone; cardId?:string; fields:Record<string,string> }
+function MapEditor({company,accountId}:{company:Company;accountId:string}) {
   const [map,setMap]=useState<MapData>(emptyMap)
   const [loading,setLoading]=useState(true)
   const [loaded,setLoaded]=useState(false)
   const [busy,setBusy]=useState(false)
   const [notice,setNotice]=useState('')
   const [error,setError]=useState('')
-  const [editing,setEditing]=useState<{zone:Zone; card?:Card}|null>(null)
+  const [editing,setEditing]=useState<{zone:Zone; card?:Card; draft?:Record<string,string>}|null>(null)
+  const [blocked,setBlocked]=useState(false)
+  const [checkedOut,setCheckedOut]=useState(false)
+  const lastSave=useRef<CardDraft|null>(null)
   const [moving,setMoving]=useState<Card|null>(null)
   const [dragged,setDragged]=useState<string|null>(null)
   const [over,setOver]=useState<string|null>(null)
-  const [view,setView]=useState('Map')
+  const billingReturn=new URLSearchParams(window.location.search).get('billing')
+  const [view,setView]=useState(billingReturn?'Billing':'Map')
   const [list,setList]=useState(false)
   const operation=useRef(false)
   const id=company.id
+  const draftKey='rolemapper:checkout:'+accountId+':'+id
+  const [draft,setDraft]=useState<CardDraft|null>(()=>{
+    try {
+      const saved=JSON.parse(sessionStorage.getItem(draftKey)||'null') as CardDraft|null
+      return saved && zones.some(([zone])=>zone===saved.zone) ? saved : null
+    } catch { return null }
+  })
+  async function upgrade() {
+    setCheckedOut(true);setError('')
+    try {
+      await openBilling(db!,id,'checkout',()=>{
+        if(lastSave.current)sessionStorage.setItem(draftKey,JSON.stringify(lastSave.current))
+      })
+    } catch(error) { setError(errorText(error));setCheckedOut(false) }
+  }
   async function readMap():Promise<MapData> {
     const [cards,people,organizations]=await Promise.all([
       db!.from('placements').select('*').eq('company_id',id).order('rank').order('id'),
@@ -133,7 +154,7 @@ function MapEditor({company}:{company:Company}) {
   },[id])
   async function mutate(action:()=>PromiseLike<{error:unknown}>, done:()=>void, success='Changes saved') {
     if(operation.current)return
-    operation.current=true;setBusy(true);setNotice('');setError('')
+    operation.current=true;setBusy(true);setNotice('');setError('');setBlocked(false)
     let saved=false
     try {
       const {error}=await action();if(error)throw error
@@ -141,7 +162,10 @@ function MapEditor({company}:{company:Company}) {
       setMap(await readMap());setNotice(success)
     } catch(e){
       if(saved){setLoaded(false);setError('Changes were saved, but the map could not reload. ' + errorText(e))}
-      else setError(errorText(e))
+      else {
+        setBlocked(!!e && typeof e==='object' && 'code' in e && e.code==='RM005')
+        setError(errorText(e))
+      }
     } finally{operation.current=false;setBusy(false)}
   }
   const move=(card:Card,zone:Zone,before:string|null)=>mutate(()=>db!.rpc('move_card',{workspace:id,card:card.id,target:zone,before_card:before}),()=>setMoving(null),'Card moved')
@@ -155,11 +179,19 @@ function MapEditor({company}:{company:Company}) {
   return <main className="main">
     <div className="hero"><div><p className="eyebrow">THE PEOPLE AROUND YOUR COMPANY</p><h1>{company.name}</h1><p>See who builds, backs and supports your company.</p></div>
     <span className="privacy"><span aria-hidden="true">●</span> Private workspace</span></div>
-    <nav className="views" aria-label="Workspace views">{['Map','Handoffs','Scenarios'].map(v=><button key={v} aria-current={view===v?'page':undefined} onClick={()=>setView(v)}>{v}</button>)}</nav>
+    <nav className="views" aria-label="Workspace views">{['Map','Handoffs','Scenarios','Billing'].map(v=><button key={v} aria-current={view===v?'page':undefined} onClick={()=>setView(v)}>{v}</button>)}</nav>
     {(busy||notice||loading)&&<p className="feedback" role="status">{busy?'Saving…':loading?'Loading your map…':notice}</p>}
     {error&&!editing&&!moving&&<p className="error" role="alert">{error}</p>}
     {!loaded&&!loading&&<button onClick={async()=>{setLoading(true);setError('');try{setMap(await readMap());setLoaded(true)}catch(e){setError(errorText(e))}finally{setLoading(false)}}}>Reload map</button>}
-    {view!=='Map'?<section className="guide"><div><h2>{view}</h2><p>This view is planned for a later release.</p></div></section>:loaded&&<>
+    {draft && view==='Map' && loaded && !editing && <section className="guide">
+      <p>You have an unsaved card from before checkout.</p>
+      <button onClick={()=>{
+        const card=map.cards.find(candidate=>candidate.id===draft.cardId)
+        if(draft.cardId && !card){setError('This card no longer exists.');return}
+        setError('');setBlocked(false);setEditing({zone:draft.zone,card,draft:draft.fields})
+      }}>Resume card</button>
+    </section>}
+    {view==='Billing'?<Billing db={db!} workspace={id} count={count} returned={billingReturn==='returned'}/>:view!=='Map'?<section className="guide"><div><h2>{view}</h2><p>This view is planned for a later release.</p></div></section>:loaded&&<>
       <div className="boardbar"><div><strong>{count} {count===1?'person':'people'}</strong><span>{map.cards.length} {map.cards.length===1?'placement':'placements'}</span></div><div>
         <button className="layout-toggle" onClick={()=>setList(!list)} aria-pressed={list}>{list?'Show map':'Show grouped list'}</button>
         <button className="primary" disabled={busy} onClick={()=>{setError('');setEditing({zone:needsFounder?'founder':'team'})}}>+ Add card</button>
@@ -191,8 +223,15 @@ function MapEditor({company}:{company:Company}) {
       })}</div>
       <footer>Drag cards to rearrange the map, or use <strong>Move to…</strong> to pick a zone and position.</footer>
     </>}
-    {editing&&<CardEditor {...editing} map={map} busy={busy} error={error} close={()=>setEditing(null)}
-      save={fields=>mutate(()=>db!.rpc('save_card',{workspace:id,card:editing.card?.id??null,fields}),()=>setEditing(null))}
+    {editing&&<CardEditor {...editing} map={map} busy={busy||checkedOut} error={error} close={()=>{setEditing(null);setBlocked(false)}}
+      upgrade={blocked?()=>void upgrade():undefined}
+      save={fields=>{
+        lastSave.current={zone:editing.zone,cardId:editing.card?.id,fields}
+        return mutate(()=>db!.rpc('save_card',{workspace:id,card:editing.card?.id??null,fields}),()=>{
+          if(editing.draft){sessionStorage.removeItem(draftKey);setDraft(null)}
+          setEditing(null)
+        })
+      }}
       remove={editing.card?()=>mutate(()=>db!.from('placements').delete().eq('company_id',id).eq('id',editing.card!.id),()=>setEditing(null),'Card removed'):undefined}/>}
     {moving&&<MoveCard card={moving} map={map} error={error} busy={busy} close={()=>setMoving(null)} move={(zone,before)=>void move(moving,zone,before)}/>}
   </main>
@@ -207,11 +246,11 @@ function Panel({title,close,busy,children}:{title:string;close:()=>void;busy:boo
   </dialog>
 }
 
-function CardEditor({zone,card,map,busy,error,close,save,remove}:{zone:Zone;card?:Card;map:MapData;busy:boolean;error:string;close:()=>void;save:(fields:Record<string,string>)=>void;remove?:()=>void}) {
-  const [status,setStatus]=useState<Status>(card?.status??'Filled')
-  const [kind,setKind]=useState(card?.organization_id?'partner':'person')
-  const [personId,setPersonId]=useState(card?.person_id??'')
-  const [orgId,setOrgId]=useState(card?.organization_id??'')
+function CardEditor({zone,card,draft,map,busy,error,close,save,remove,upgrade}:{zone:Zone;card?:Card;draft?:Record<string,string>;map:MapData;busy:boolean;error:string;close:()=>void;save:(fields:Record<string,string>)=>void;remove?:()=>void;upgrade?:()=>void}) {
+  const [status,setStatus]=useState<Status>((draft?.status as Status|undefined)??card?.status??'Filled')
+  const [kind,setKind]=useState(draft ? (draft.organization_id||draft.organization_name?'partner':'person') : (card?.organization_id?'partner':'person'))
+  const [personId,setPersonId]=useState(draft?.person_id??card?.person_id??'')
+  const [orgId,setOrgId]=useState(draft?.organization_id??card?.organization_id??'')
   const [validation,setValidation]=useState('')
   const [confirmRemove,setConfirmRemove]=useState(false)
   const person=map.people.find(p=>p.id===personId)
@@ -234,26 +273,27 @@ function CardEditor({zone,card,map,busy,error,close,save,remove}:{zone:Zone;card
   return <Panel title={card?'Card details':zone==='founder'?'Add founding lead':'Add card'} close={close} busy={busy}>
     <form onSubmit={submit}>
       <fieldset disabled={busy}>
-        <label>Zone<select name="zone" defaultValue={zone}>{zones.map(([z])=><option key={z} value={z}>{zoneLabel(z)}</option>)}</select></label>
-        <div className="fields"><label>Role title<input name="title" defaultValue={card?.title??(zone==='founder'?'Founder':'')} required maxLength={120}/></label>
+        <label>Zone<select name="zone" defaultValue={draft?.zone??zone}>{zones.map(([z])=><option key={z} value={z}>{zoneLabel(z)}</option>)}</select></label>
+        <div className="fields"><label>Role title<input name="title" defaultValue={draft?.title??card?.title??(zone==='founder'?'Founder':'')} required maxLength={120}/></label>
         <label>Status<select name="status" value={status} onChange={e=>setStatus(e.target.value as Status)}><option>Filled</option><option>Open</option><option>Later</option></select></label></div>
-        <label>Remit<textarea name="remit" defaultValue={card?.remit} maxLength={2000} placeholder="What does this role own?"/></label>
+        <label>Remit<textarea name="remit" defaultValue={draft?.remit??card?.remit} maxLength={2000} placeholder="What does this role own?"/></label>
         {status==='Filled'&&<>
           <label>Card type<select value={kind} onChange={e=>setKind(e.target.value)}><option value="person">Person</option><option value="partner">Partner organization</option></select></label>
           {kind==='partner'&&<><label>Organization<select name="organization_id" value={orgId} onChange={e=>setOrgId(e.target.value)}><option value="">New organization</option>{map.organizations.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
-          <label>Organization name<input key={orgId} name="organization_name" defaultValue={org?.name} maxLength={120} required/></label></>}
+          <label>Organization name<input key={orgId} name="organization_name" defaultValue={(draft && orgId===draft.organization_id ? draft.organization_name : undefined)??org?.name} maxLength={120} required/></label></>}
           {(map.people.length>0||kind==='partner')&&<label>{kind==='partner'?'Named contact (optional)':'Person record'}<select name="person_id" value={personId} onChange={e=>setPersonId(e.target.value)}><option value="">{kind==='partner'?'No existing contact':'New person'}</option>{map.people.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
           {person&&<p className="hint">Contact details are shared across this person’s roles.</p>}
           <div className="person-fields" key={personId}>
-            <label>Name<input name="person_name" defaultValue={person?.name} required={kind==='person'||!!personId} maxLength={120} autoFocus={!card&&zone==='founder'}/></label>
-            <label>Bio<textarea name="bio" defaultValue={person?.bio} maxLength={3000}/></label>
-            <label>LinkedIn<input type="url" name="linkedin" defaultValue={person?.linkedin} maxLength={500} placeholder="https://www.linkedin.com/in/…"/>{linkedin&&<a href={linkedin} target="_blank" rel="noopener noreferrer">Open LinkedIn profile</a>}</label>
-            <label>Email<input name="email" type="email" defaultValue={person?.email} maxLength={254}/></label>
-            <label>Company or affiliation<input name="affiliation" defaultValue={person?.affiliation} maxLength={120}/></label>
+            <label>Name<input name="person_name" defaultValue={(draft && personId===draft.person_id ? draft.person_name : undefined)??person?.name} required={kind==='person'||!!personId} maxLength={120} autoFocus={!card&&zone==='founder'}/></label>
+            <label>Bio<textarea name="bio" defaultValue={(draft && personId===draft.person_id ? draft.bio : undefined)??person?.bio} maxLength={3000}/></label>
+            <label>LinkedIn<input type="url" name="linkedin" defaultValue={(draft && personId===draft.person_id ? draft.linkedin : undefined)??person?.linkedin} maxLength={500} placeholder="https://www.linkedin.com/in/…"/>{linkedin&&<a href={linkedin} target="_blank" rel="noopener noreferrer">Open LinkedIn profile</a>}</label>
+            <label>Email<input name="email" type="email" defaultValue={(draft && personId===draft.person_id ? draft.email : undefined)??person?.email} maxLength={254}/></label>
+            <label>Company or affiliation<input name="affiliation" defaultValue={(draft && personId===draft.person_id ? draft.affiliation : undefined)??person?.affiliation} maxLength={120}/></label>
           </div>
         </>}
       </fieldset>
       {(validation||error)&&<p className="error" role="alert">{validation||error}</p>}
+      {upgrade&&<button type="button" className="primary" disabled={busy} onClick={upgrade}>Upgrade for $10/year</button>}
       {confirmRemove&&<p>Remove this placement from the map? The person or organization stays available for other roles.</p>}
       <div className="panel-actions"><button className="primary" disabled={busy}>{busy?'Saving…':'Save card'}</button>
       {remove&&<button type="button" disabled={busy} onClick={()=>{if(confirmRemove)remove();else setConfirmRemove(true)}}>{confirmRemove?'Confirm removal':'Remove card'}</button>}
