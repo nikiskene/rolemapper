@@ -41,3 +41,11 @@ The displayed annual price is USD 10 per company. Stripe checkout remains pendin
 Authorized administrators can open `/admin` to list accounts, inspect workspace IDs, and suspend or restore access. Suspension applies to workspace data, including requests from existing sessions. Changes are recorded in the private audit log. Company names, maps, cards and contact records stay subject to the existing company owner policies.
 
 The platform administration migration creates the role and controls. Role assignments are made separately by a privileged database operator. The production assignment script checks that the expected account ID and confirmed email match before assigning the role.
+
+## Stripe webhooks
+
+The production destination is `https://rolemapper.cc/api/stripe/webhook`. Configure Stripe Workbench to send snapshot events from your account for `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, and `invoice.payment_failed`.
+
+Set `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` and `SUPABASE_SECRET_KEY` in the Netlify Functions runtime. Production uses the live price above by default. A test environment requires `STRIPE_MODE=test`, its own test credentials, test price, and a separate Supabase project. The webhook verifies the signature and mode, then reads Stripe's current subscription state. It only synchronizes customers already associated with a workspace in `rolemapper_billing.accounts`.
+
+Customer creation, workspace linking, Checkout, and the billing portal will be wired together in the purchase flow. The webhook by itself does not enable checkout or change map limits.

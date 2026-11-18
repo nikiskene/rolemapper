@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
     "lint": "eslint src tests scripts",
-    "test": "node --test tests/isolation.test.mjs",
+    "test": "node --test tests/isolation.test.mjs tests/stripe-webhook.test.mjs",
     "test:api": "node --env-file=.env.local --test tests/supabase.test.mjs",
     "seed": "node --env-file=.env.local scripts/seed.mjs"
   },
@@ -21,7 +21,8 @@
     "ipaddr.js": "^2.5.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "robots-parser": "^3.0.1"
+    "robots-parser": "^3.0.1",
+    "stripe": "^23.1.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.15",
