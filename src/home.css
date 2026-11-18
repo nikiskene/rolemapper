@@ -116,3 +116,7 @@
 .site-sources {background:#edece0;border-radius:8px;padding:10px 14px}
 .site-sources summary {cursor:pointer;font-weight:650}
 .site-sources ul {display:grid;gap:.75rem;overflow-wrap:anywhere}
+
+.site-footer nav {align-items:center}
+.feature-header {padding-block:.9rem}
+.feature-header a {display:inline-flex}

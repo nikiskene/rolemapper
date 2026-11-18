@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { FeatureInbox } from './FeatureInbox'
 import { Brand } from './Home'
 import { errorText } from './model'
 
@@ -71,7 +72,8 @@ export function Admin({db}:{db:SupabaseClient}) {
     <header className="topbar"><Brand/><a href="/login">My workspace</a></header>
     <main className="main admin-page">
       <h1>Rolemapper administration</h1>
-      <p>Manage access to accounts and workspaces.</p>
+      <p>Manage feature requests, accounts, and workspace access.</p>
+      <FeatureInbox db={db}/>
       {error&&<p className="error" role="alert">{error}</p>}
       {change&&<section className="admin-confirm" aria-label="Confirm access change">
         <p>{change.suspend?'Suspend':'Restore'} access for {change.label}?</p>

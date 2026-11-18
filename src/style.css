@@ -35,3 +35,10 @@
 .headshot-edit {display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
 .headshot-edit label {flex:1}
 @media(max-width:720px){.board.map-compact {grid-template-columns:1fr}}
+
+.workspace-footer {padding-block:1rem 2rem}
+.feature-link {display:inline-flex;align-items:center;min-height:42px;padding:.4rem .85rem;border:1px solid var(--line);border-radius:8px;text-decoration:none;font-weight:700}
+.inbox-toolbar {margin-block:.8rem}
+.feature-inbox li {display:grid;justify-content:stretch;gap:.7rem}
+.feature-inbox h3 {margin:0}
+.feature-text {white-space:pre-wrap;overflow-wrap:anywhere}

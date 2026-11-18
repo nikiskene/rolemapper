@@ -22,7 +22,7 @@ function SiteHeader() {
 export function SiteFooter() {
   return <footer className="site-footer"><div className="site-wrap footer-layout">
     <div><Brand/><p>Operated by IACy International FZCO.</p></div>
-    <nav aria-label="Legal"><a href="/legal">Legal notice</a><a href="/privacy">Privacy & GDPR</a><a href="/terms">Terms</a><a href="/cookies">Cookies & storage</a></nav>
+    <nav aria-label="Footer"><a className="site-button secondary" href="/feature-request">Feature request</a><a href="/legal">Legal notice</a><a href="/privacy">Privacy & GDPR</a><a href="/terms">Terms</a><a href="/cookies">Cookies & storage</a></nav>
   </div></footer>
 }
 
@@ -84,6 +84,7 @@ const privacy = <>
   <p>We use your email and account information to create and authenticate your account. Supabase Auth manages credentials. We store the company details and map content you enter so you can use the private workspace. If you ask the team planner to read a website, we receive the public URL and retrieve the pages for your review. Planning answers such as your team size and costs are calculated in your browser.</p>
   <p>Where GDPR applies, we process account and service data to provide the service you request. We use technical logs, which may include IP addresses and request information, for our legitimate interests in securing and maintaining the service. Where required, we process information to comply with legal obligations.</p>
   <p>When a workspace owner adds information about other people, the owner determines why that information is entered and is responsible for having a lawful basis, providing any required notice and responding to requests about that data. Rolemapper stores it to provide the workspace.</p>
+  <p>If you submit a feature request, we store the headline, description and expected benefit so the Rolemapper team can review it.</p>
   <h2>Providers and international processing</h2>
   <p>We use Netlify to host the site and Supabase for authentication and workspace storage. These providers may process data outside the country where you live. Contact us for information about the locations, transfer safeguards and how to obtain a copy of applicable safeguards.</p>
   <h2>Retention and your rights</h2>

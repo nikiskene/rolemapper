@@ -1,12 +1,14 @@
-import { StrictMode, useEffect, useRef, useState, type FormEvent } from 'react'
+import { StrictMode, Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createClient, type Session } from '@supabase/supabase-js'
 import { errorText, linkedinUrl, zoneLabel, zones, type Card, type Company, type MapData, type Status, type Zone } from './model'
 import './style.css'
 import { Avatar, ExportPanel, MapPager, SharedMap, mapPageSize, ownerPhotos, photoIds, prepareHeadshot, type DisplayCard, type Photos } from './MapExport'
 import { Billing, openBilling } from './Billing'
-import { Admin } from './Admin'
 import { Brand, Homepage, isLegalPath, LegalPage, PlannerPage } from './Home'
+
+const Admin = lazy(()=>import('./Admin').then(module=>({default:module.Admin})))
+const FeatureRequest = lazy(()=>import('./FeatureRequest').then(module=>({default:module.FeatureRequest})))
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
@@ -100,6 +102,7 @@ function Workspace({session}:{session:Session}) {
       <form onSubmit={create}><label>Company name<input name="name" maxLength={100} required autoFocus/></label><button className="primary" disabled={busy}>{busy?'Creating…':'Create company'}</button></form>
     </section>}
     {company&&<MapEditor company={company} accountId={session.user.id} key={company.id}/>}
+    <footer className="main workspace-footer"><a className="feature-link" href="/feature-request">Feature request</a></footer>
   </>
 }
 
@@ -433,9 +436,10 @@ function App() {
   if (path === '/admin') return <Account startRegister={false} admin/>
   const snapshot=path.match(/^\/map\/([0-9a-f-]{36})$/i)
   if(snapshot&&db)return <SharedMap db={db} token={snapshot[1]}/>
+  if (path === '/feature-request') return <FeatureRequest/>
   if (path === '/planner') return <PlannerPage/>
   if (isLegalPath(path)) return <LegalPage path={path}/>
   return <Homepage/>
 }
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App/></StrictMode>)
+createRoot(document.getElementById('root')!).render(<StrictMode><Suspense fallback={<main className="main" role="status">Loading…</main>}><App/></Suspense></StrictMode>)
