@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 
-import { annualWage, hiringBudget, wageSource } from './talentBenchmarks'
+import { annualWage, hiringBudget, matchWageCity, wageCities, wageSource } from './talentBenchmarks'
 import { patterns, suggestedPattern, type Pattern } from './plannerProfiles'
 
 const currencies = ['USD','EUR','AED','GBP','CHF','CAD','AUD','INR','SGD','MXN','PLN','CZK','JPY','NZD','BRL','ZAR'] as const
@@ -45,12 +45,12 @@ export function Planner() {
   const money = new Intl.NumberFormat('en',{style:'currency',currency,minimumFractionDigits:0,maximumFractionDigits:2})
   const setupMinor = Math.round(Number(setup)*100)
   const marketLabel = [city.trim(),market==='us'?'United States':market==='remote'?'Remote':market==='other'?null:market].filter(Boolean).join(', ')
-  const benchmarkAvailable = market==='us' && currency==='USD' && goal!=='other'
+  const wageCity = market==='us' && currency==='USD' && goal!=='other' ? matchWageCity(city) : undefined
   const hiresByRole = gaps.slice(0,Math.max(0,hires)).map(([role])=>{
-    const wage=benchmarkAvailable?annualWage(role):undefined
+    const wage=wageCity?annualWage(role,wageCity):undefined
     const own=overrides[role]
     const monthly=own!==undefined&&own!==''?Math.round(Number(own)*100):
-      wage&&useBenchmarks?Math.round(wage[1]/12*(1+Number(burden)/100)*100):
+      wage&&useBenchmarks?Math.round(wage.mean/12*(1+Number(burden)/100)*100):
       cost!==''?Math.round(Number(cost)*100):null
     return {role,wage,monthly,estimated:!!wage&&useBenchmarks&&!own}
   })
@@ -173,19 +173,22 @@ export function Planner() {
           {['Austria','Germany','United Arab Emirates','United Kingdom','Switzerland','Canada','Australia','India','Singapore'].map(value=><option key={value}>{value}</option>)}
           <option value="remote">Remote across markets</option><option value="other">Other market</option>
         </select></label>
-        <label>{market==='other'?'City and country (optional)':'City or region (optional)'}<input value={city} onChange={e=>setCity(e.target.value)} maxLength={100} /></label>
+        <label>{market==='other'?'City and country (optional)':'City or region (optional)'}<input value={city} list={market==='us'?'wage-cities':undefined} onChange={e=>setCity(e.target.value)} maxLength={100} /></label>
+        {market==='us'&&<datalist id="wage-cities">{wageCities.map(value=><option key={value} value={value}/>)}</datalist>}
         <label>Budget currency<select value={currency} onChange={e=>{setCurrency(e.target.value);setUseBenchmarks(false)}}>{currencies.map(c=><option key={c}>{c}</option>)}</select></label>
         <p className="planner-note">Enter every estimate in {currency}. The configurator doesn’t convert currencies.</p>
         {hires>0&&<>
-          {benchmarkAvailable&&hiresByRole.some(role=>role.wage)?<section className="site-sources" aria-label="Salary benchmarks">
-            <strong>U.S. national wage benchmarks{city.trim()?' (no city estimate)':''}</strong>
-            <p><a href={wageSource} target="_blank" rel="noreferrer">U.S. Bureau of Labor Statistics · May 2025</a> · Average annual employee wages for comparable occupations. These figures exclude employer taxes and benefits and don’t estimate contractor rates.</p>
+          {wageCity&&hiresByRole.some(role=>role.wage)?<section className="site-sources" aria-label="Salary benchmarks">
+            <strong>{wageCity} metro wage benchmarks</strong>
+            <p><a href={wageSource} target="_blank" rel="noreferrer">U.S. Bureau of Labor Statistics · May 2025</a> · Annual employee wages for comparable occupations in the metropolitan area. Ranges show the middle 50% of wages where available. Add employer taxes and benefits separately.</p>
             <div className="planner-coverage"><label><input type="checkbox" checked={useBenchmarks} onChange={e=>setUseBenchmarks(e.target.checked)}/><span>Use benchmarks for roles without my own estimate</span></label></div>
             {useBenchmarks&&<label>Extra employer costs (% of benchmark wage)<input type="number" min="0" max="300" step="0.1" value={burden} onChange={e=>setBurden(e.target.value)} placeholder="0 (wages only)"/></label>}
-          </section>:market&&<p className="planner-note">No automatic wage benchmark for these roles in this market and currency. Enter local estimates below.</p>}
+          </section>:market&&<p className="planner-note">{market==='us'&&!city.trim()?'Enter a city to look up local wages.':'Local wage benchmarks are unavailable for these roles, location or currency. Enter your estimates below.'}</p>}
           {hiresByRole.map(({role,wage,monthly,estimated})=><div className="site-sources" key={role}>
             <strong>{role}</strong>
-            {wage&&<p>{money.format(wage[1])} average annual wage · comparable occupation: {wage[0]}{estimated&&monthly!==null?' · '+money.format(monthly/100)+'/month in plan':''}</p>}
+            {wage&&<p>{money.format(wage.mean)} average annual wage · {wage.title}
+              {wage.low!=null&&wage.high!=null&&<> · {money.format(wage.low)}–{money.format(wage.high)} middle 50%</>}
+              {estimated&&monthly!==null?' · '+money.format(monthly/100)+'/month in plan':''}</p>}
             <label>Monthly cost override for {role}<input type="number" min="0" max="10000000" step="0.01" value={overrides[role]??''} onChange={e=>setOverrides(values=>({...values,[role]:e.target.value}))} placeholder="Optional · include employer costs"/></label>
           </div>)}
         </>}
@@ -201,9 +204,9 @@ export function Planner() {
         <strong>{missing>0&&total===0?'Cost estimate needed':(missing?'Partial budget: ':'')+money.format(total/100)+' '+currency}</strong>
         <p>{hires} new {hires===1?'hire':'hires'}{marketLabel&&' · '+marketLabel}{(activeMonthly>0||!missing)&&hires>0&&' · '+money.format(activeMonthly/100)+(missing?' known':' additional')+' monthly cost at target size'}</p>
         {missing>0&&<p>{missing} {missing===1?'hire needs':'hires need'} a cost estimate.</p>}
-        {hiresBenchmarked&&<p>Includes U.S. national wage estimates{Number(burden)>0?' plus '+burden+'% for employer costs':' (employer taxes and benefits excluded for benchmarked roles)'}.</p>}
+        {hiresBenchmarked&&<p>Includes wage estimates for the {wageCity} metro area{Number(burden)>0?' plus '+burden+'% for employer costs':' (employer taxes and benefits excluded for benchmarked roles)'}.</p>}
       </div>
-      {hiresByRole.length>0&&<details className="site-sources"><summary>Cost by role</summary><ul>{hiresByRole.map(({role,monthly,estimated})=><li key={role}>{role} · {monthly===null?'Estimate needed':money.format(monthly/100)+'/month'}{estimated?' (U.S. national benchmark)':''}</li>)}</ul></details>}
+      {hiresByRole.length>0&&<details className="site-sources"><summary>Cost by role</summary><ul>{hiresByRole.map(({role,monthly,estimated})=><li key={role}>{role} · {monthly===null?'Estimate needed':money.format(monthly/100)+'/month'}{estimated?' (metro wage benchmark)':''}</li>)}</ul></details>}
       <h3>Suggested starting responsibilities</h3>
       <p>One person can cover several responsibilities. Confirm who has capacity before hiring.</p>
       <ul>
